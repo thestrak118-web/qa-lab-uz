@@ -4,9 +4,7 @@ test("API requests share the shop session and reject malformed checkout state", 
   page,
 }) => {
   await page.goto("/");
-  await page
-    .getByRole("heading", { name: "Loyiha ko‘rinishi" })
-    .waitFor();
+  await page.getByRole("heading", { name: "Loyiha ko‘rinishi" }).waitFor();
   await page
     .getByRole("button", { name: "API laboratoriya", exact: true })
     .click();
@@ -14,7 +12,7 @@ test("API requests share the shop session and reject malformed checkout state", 
   await expect(page.locator(".response-head .badge")).toHaveText("200");
   expect(
     JSON.parse(await page.locator(".response-code").textContent()).total,
-  ).toBe(9);
+  ).toBe(36);
   await page.getByRole("button", { name: "Login", exact: true }).click();
   await page.getByRole("button", { name: "Yuborish", exact: true }).click();
   await expect(page.locator(".response-code")).toContainText("qa@lab.uz");
@@ -47,9 +45,7 @@ test("review unlock, fixed build and final report persist and export", async ({
   page,
 }) => {
   await page.goto("/");
-  await page
-    .getByRole("heading", { name: "Loyiha ko‘rinishi" })
-    .waitFor();
+  await page.getByRole("heading", { name: "Loyiha ko‘rinishi" }).waitFor();
   await page
     .getByRole("button", { name: "Natija va retest", exact: true })
     .click();

@@ -56,6 +56,87 @@ test("seed regenerates an identical scenario, difficulty spreads defects across 
   assert.equal(catalog.size, 14);
 });
 
+test("expanded catalog contains distinct products with useful details and boundary-test stock", () => {
+  const s = createScenario("expanded-catalog");
+  assert.equal(s.products.length, 36);
+  for (const key of ["id", "name", "sku", "description"])
+    assert.equal(new Set(s.products.map((p) => p[key])).size, 36, key);
+  const photoTypes = new Set([
+    "headphones",
+    "speaker",
+    "mouse",
+    "keyboard",
+    "bottle",
+    "lamp",
+    "watch",
+    "earbuds",
+    "box",
+  ]);
+  for (const p of s.products) {
+    assert.ok(
+      photoTypes.has(p.icon),
+      `${p.id} must have a local product photo`,
+    );
+    assert.ok(
+      p.description.length > 70 && /\d/.test(p.description),
+      `${p.id} has concrete product specifications`,
+    );
+    assert.ok(s.categories.includes(p.category));
+  }
+  for (const category of s.categories.filter(
+    (category) => category !== "Barchasi",
+  ))
+    assert.ok(s.products.filter((p) => p.category === category).length >= 6);
+  assert.ok(s.products.filter((p) => p.stock === 0).length >= 3);
+  assert.ok(s.products.some((p) => p.price < 100000 && p.stock > 0));
+  assert.ok(s.products.some((p) => p.price > 300000 && p.stock === 2));
+  assert.equal(s.products.find((p) => p.id === "p4").stock, 2);
+  assert.equal(s.products.find((p) => p.id === "p8").stock, 0);
+});
+
+test("catalog expansion preserves established seed defect selections and layouts", () => {
+  const s = createScenario("QA-2026");
+  assert.equal(s.brand, "Noma");
+  assert.equal(s.variant, 2);
+  assert.deepEqual(
+    s.bugs.map((b) => b.id),
+    ["BUG-12", "BUG-13", "BUG-09", "BUG-01", "BUG-14", "BUG-06"],
+  );
+  assert.deepEqual(s.products, createScenario("QA-2026").products);
+  assert.notDeepEqual(
+    s.products.map((p) => p.id),
+    createScenario("another-catalog").products.map((p) => p.id),
+  );
+});
+
+test("new catalog products participate in API search, totals and order snapshots", () => {
+  const s = { ...createScenario("expanded-api"), bugs: [] };
+  const all = simulateApi(s, initialProductState(), [], { path: "/products" });
+  assert.equal(all.body.total, 36);
+  const headset = s.products.find((p) => p.id === "p33");
+  const result = simulateApi(s, initialProductState(), [], {
+    path: `/products?search=${headset.sku}&category=Audio`,
+  });
+  assert.deepEqual(
+    result.body.data.map((p) => p.id),
+    [headset.id],
+  );
+  let state = changeCart(s, initialProductState(), [], "p33", 2);
+  state = changeCart(s, state, [], "p36", 1);
+  const mug = s.products.find((p) => p.id === "p36");
+  const totals = calculateCart(s, state);
+  assert.equal(totals.subtotal, headset.price * 2 + mug.price);
+  assert.equal(totals.delivery, 0);
+  const order = call(s, state, "/orders", validFields);
+  assert.equal(order.status, 201);
+  assert.deepEqual(
+    order.body.order.items.map((p) => p.productId),
+    ["p33", "p36"],
+  );
+  assert.equal(order.body.order.total, totals.total);
+  assert.equal(order.productState.cart.length, 0);
+});
+
 test("catalog query is case insensitive and intersects category, sorting; regressions can be fixed", () => {
   const query = { ...initialProductState(), query: "AIR" };
   assert.equal(filterProducts(clean, query).length, 2);

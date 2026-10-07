@@ -124,7 +124,13 @@ function Field({ label, hint, children, wide }) {
   );
 }
 
-export default function Workspace({ session, onUpdate, tab = "checklist" }) {
+export default function Workspace({
+  session,
+  onUpdate,
+  tab = "checklist",
+  composeRequest,
+  onComposeHandled,
+}) {
   const meta = META[tab] || META.checklist;
   const Icon = meta.icon;
   const isReport = tab === "reports";
@@ -218,6 +224,19 @@ export default function Workspace({ session, onUpdate, tab = "checklist" }) {
     setError("");
     setMessage("");
   };
+  useEffect(() => {
+    if (!composeRequest || composeRequest.tab !== tab) return;
+    const requirement = requirements.find(
+      (item) => item.id === composeRequest.requirementId,
+    );
+    if (requirement) {
+      setDraft({ ...blank(), requirementId: requirement.id });
+      setEditing(false);
+      setError("");
+      setMessage("");
+    }
+    onComposeHandled?.();
+  }, [composeRequest?.id, session.id, tab]);
   const edit = (item) => {
     setDraft({
       ...item,

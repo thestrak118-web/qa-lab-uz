@@ -43,6 +43,8 @@ import {
 import Shop from "./components/Shop.jsx";
 import Workspace from "./components/Workspace.jsx";
 import ApiLab from "./components/ApiLab.jsx";
+import ThemeToggle from "./components/ThemeToggle.jsx";
+import PracticeGuide from "./components/PracticeGuide.jsx";
 const DIFFICULTY = {
   beginner: "Boshlang‘ich",
   standard: "Amaliyot",
@@ -116,6 +118,7 @@ export default function App() {
     [storageError, setStorageError] = useState(""),
     [notice, setNotice] = useState(""),
     [newModal, setNewModal] = useState(false),
+    [composeRequest, setComposeRequest] = useState(null),
     [mobile, setMobile] = useState(false),
     [reveal, setReveal] = useState(false);
   const fileRef = useRef(),
@@ -355,6 +358,7 @@ export default function App() {
             </span>
           </div>
           <div className="topbar-right">
+            <ThemeToggle />
             <span className="local-pill">
               <span className="live-dot" /> O‘quv muhiti
             </span>
@@ -397,7 +401,15 @@ export default function App() {
           {page === "overview" && (
             <Overview session={session} navigate={navigate} />
           )}
-          {page === "requirements" && <Requirements session={session} />}
+          {page === "requirements" && (
+            <Requirements
+              session={session}
+              onCompose={(tab, requirementId) => {
+                setComposeRequest({ id: uid(), tab, requirementId });
+                navigate(tab);
+              }}
+            />
+          )}
           {page === "shop" && (
             <div key={session.id}>
               <div className="session-strip">
@@ -417,7 +429,13 @@ export default function App() {
             </div>
           )}
           {["checklist", "cases", "reports"].includes(page) && (
-            <Workspace session={session} onUpdate={onUpdate} tab={page} />
+            <Workspace
+              session={session}
+              onUpdate={onUpdate}
+              tab={page}
+              composeRequest={composeRequest}
+              onComposeHandled={() => setComposeRequest(null)}
+            />
           )}
           {page === "api" && (
             <ApiLab key={session.id} session={session} onUpdate={onUpdate} />
@@ -588,6 +606,7 @@ function Overview({ session, navigate }) {
           Do‘konni ochish <ArrowUpRight size={16} />
         </button>
       </section>
+      <PracticeGuide session={session} navigate={navigate} />
       <section className="metrics-strip" aria-label="Mashq statistikasi">
         <button onClick={() => navigate("cases")}>
           <span>Test-case’lar</span>
@@ -829,7 +848,7 @@ function Overview({ session, navigate }) {
     </>
   );
 }
-function Requirements({ session }) {
+function Requirements({ session, onCompose }) {
   const [query, setQuery] = useState("");
   const reqs = session.scenario.requirements.filter((r) =>
     `${r.id} ${r.title} ${r.description} ${r.module}`
@@ -868,6 +887,22 @@ function Requirements({ session }) {
             </div>
             <h3>{r.title}</h3>
             <p>{r.description}</p>
+            <div className="requirement-actions">
+              <button
+                className="text-button"
+                onClick={() => onCompose("checklist", r.id)}
+                aria-label={`${r.id}: checklist yozish`}
+              >
+                <ListChecks size={15} /> Checklist yozish
+              </button>
+              <button
+                className="text-button"
+                onClick={() => onCompose("cases", r.id)}
+                aria-label={`${r.id}: test-case yozish`}
+              >
+                <Files size={15} /> Test-case yozish
+              </button>
+            </div>
           </article>
         ))}
       </div>

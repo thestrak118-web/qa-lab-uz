@@ -142,6 +142,40 @@ test("fresh seeded sessions and populated simulator/UI state round-trip without 
   assert.equal(input.sessions[0].reports[0].evidence[0].name, "evidence.png");
 });
 
+test("legacy nine-product exercises and expanded exercises coexist without rewriting saved work", () => {
+  const legacy = populated().sessions[0];
+  legacy.id = "legacy-nine-products";
+  legacy.scenario.products = legacy.scenario.products.filter(
+    (p) => Number(p.id.slice(1)) <= 9,
+  );
+  for (const p of legacy.scenario.products)
+    p.description = `${p.name} — kundalik ish va dam olish uchun puxta ishlangan mahsulot.`;
+  const expanded = session("expanded-storage");
+  expanded.productState.cart = [{ productId: "p36", quantity: 2 }];
+  expanded.productState.selectedProduct = "p36";
+  const input = JSON.parse(
+    JSON.stringify({
+      version: 1,
+      activeId: legacy.id,
+      sessions: [legacy, expanded],
+    }),
+  );
+  const before = structuredClone(input);
+  assert.equal(validateBackup(input), input);
+  assert.deepEqual(
+    input,
+    before,
+    "import must not regenerate or replace an old scenario",
+  );
+  assert.equal(input.sessions[0].scenario.products.length, 9);
+  assert.equal(input.sessions[1].scenario.products.length, 36);
+  assert.equal(input.sessions[0].reports[0].title, "Savat narxi yangilanmaydi");
+  assert.equal(input.sessions[0].productState.orders[0].status, "cancelled");
+  assert.deepEqual(input.sessions[1].productState.cart, [
+    { productId: "p36", quantity: 2 },
+  ]);
+});
+
 test("negative tests, stale report links and reasonable optional fields remain importable", () => {
   const b = populated(),
     s = b.sessions[0];

@@ -335,6 +335,9 @@ test("390px navigation, shop and authoring forms have no horizontal overflow", a
   ).toBeVisible();
   await noOverflow();
   await page
+    .getByRole("textbox", { name: "Mahsulot qidirish", exact: true })
+    .fill("QA-P1-");
+  await page
     .getByTestId("product-p1")
     .getByRole("button", { name: /savatga qo‘shish/ })
     .click();

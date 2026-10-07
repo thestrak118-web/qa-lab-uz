@@ -2,6 +2,15 @@
 
 O‘zbek tilida QA mashq qilish uchun veb ilova. Bir oynada demo do‘konni tekshirasiz, talablarni o‘qiysiz, checklist, test-case va bug-report yozasiz. Maqsad — shunchaki xatoni ko‘rish emas, uni qayta ko‘rsatish va aniq hujjatlashtirishni o‘rganish.
 
+## Katalog va qulayliklar
+
+- **36 ta mahsulot:** 4 kategoriya, qidiruv, saralash va har sahifada 12 ta mahsulot. Faol filtrni alohida yoki barcha filtrlarni birdan tozalash mumkin. Mahsulot tafsilotlarida o‘quv modeli xususiyatlari yozilgan; suratlar namuna uchun.
+- **Kunduzgi, tungi va tizimga mos rejim:** yuqori paneldagi **Rang rejimi** orqali tanlanadi. Tanlov shu brauzerda saqlanadi; “Tizimga mos” operatsion tizim rang rejimini kuzatadi.
+- **Keyingi qadam:** bosh sahifa joriy yozuvlaringizga qarab ishni qayerdan davom ettirishni ko‘rsatadi. “Mashqning 5 bosqichi” butun jarayonni qisqa tushuntiradi.
+- **Talabdan hujjatga:** talab kartasidagi **Checklist yozish** yoki **Test-case yozish** bog‘langan talab bilan bo‘sh tahrir formasini ochadi. Yozuv faqat **Saqlash** bosilganda yaratiladi.
+
+Oldingi 9 mahsulotli mashq o‘z holicha saqlanadi. Kengaygan katalog bilan ishlash uchun **Yangi mashq** oching; eski ishlaringiz **Mashqlar tarixi** bo‘limida qoladi.
+
 ## Tez ishga tushirish
 
 Node.js **22.12 yoki undan yangi** versiya kerak.

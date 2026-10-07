@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -27,6 +27,14 @@ import {
   simulateApi,
 } from "../lib/scenario.js";
 import "../shop.css";
+
+const CATALOG_PAGE_SIZE = 12;
+const SORT_LABELS = {
+  popular: "Tavsiya etilgan",
+  "price-asc": "Arzon avval",
+  "price-desc": "Qimmat avval",
+  rating: "Yuqori reyting",
+};
 
 function ProductArt({ product, small = false }) {
   return (
@@ -63,6 +71,39 @@ export default function Shop({ session, onUpdate }) {
   const fixed = session.fixedBugIds || [];
   const totals = calculateCart(scenario, state, fixed);
   const products = filterProducts(scenario, state, fixed);
+  // Pagination is presentation state; the saved exercise and seeded defects
+  // continue to own filtering, sorting, cart and order behavior.
+  const resultKey = JSON.stringify([
+    session.id,
+    state.query,
+    state.category,
+    state.sort,
+    products.map((product) => product.id),
+  ]);
+  const [pagination, setPagination] = useState({ key: resultKey, page: 1 });
+  const pageCount = Math.max(1, Math.ceil(products.length / CATALOG_PAGE_SIZE));
+  const currentPage =
+    pagination.key === resultKey ? Math.min(pagination.page, pageCount) : 1;
+  const pageStart = (currentPage - 1) * CATALOG_PAGE_SIZE;
+  const visibleProducts = products.slice(
+    pageStart,
+    pageStart + CATALOG_PAGE_SIZE,
+  );
+  const hasFilters = Boolean(
+    state.query || state.category !== "Barchasi" || state.sort !== "popular",
+  );
+  useEffect(() => {
+    setPagination({ key: resultKey, page: 1 });
+  }, [resultKey]);
+  const changePage = (page) => {
+    setPagination({
+      key: resultKey,
+      page: Math.max(1, Math.min(page, pageCount)),
+    });
+    document
+      .getElementById(`catalog-${session.id}`)
+      ?.scrollIntoView({ block: "start" });
+  };
   const selected = scenario.products.find(
     (p) => p.id === state.selectedProduct,
   );
@@ -341,6 +382,7 @@ export default function Shop({ session, onUpdate }) {
                   <button
                     key={category}
                     className={state.category === category ? "is-active" : ""}
+                    aria-pressed={state.category === category}
                     onClick={() =>
                       mutate("Kategoriya filtri", category, (previous) => ({
                         ...previous,
@@ -353,8 +395,57 @@ export default function Shop({ session, onUpdate }) {
                 ))}
               </div>
               <div className="shop-results">
-                <p className="shop-result-count">
+                {hasFilters && (
+                  <div
+                    className="shop-active-filters"
+                    aria-label="Faol filtrlar"
+                  >
+                    <span>Tanlangan:</span>
+                    {state.query && (
+                      <button
+                        onClick={() => patch({ query: "" })}
+                        aria-label={`Qidiruv filtrini olib tashlash: ${state.query}`}
+                      >
+                        <span>“{state.query}”</span>
+                        <X size={12} />
+                      </button>
+                    )}
+                    {state.category !== "Barchasi" && (
+                      <button
+                        onClick={() => patch({ category: "Barchasi" })}
+                        aria-label={`Kategoriya filtrini olib tashlash: ${state.category}`}
+                      >
+                        <span>{state.category}</span>
+                        <X size={12} />
+                      </button>
+                    )}
+                    {state.sort !== "popular" && (
+                      <button
+                        onClick={() => patch({ sort: "popular" })}
+                        aria-label="Saralashni tiklash"
+                      >
+                        <span>{SORT_LABELS[state.sort]}</span>
+                        <X size={12} />
+                      </button>
+                    )}
+                    <button
+                      className="shop-reset-filters"
+                      onClick={() =>
+                        patch({
+                          query: "",
+                          category: "Barchasi",
+                          sort: "popular",
+                        })
+                      }
+                    >
+                      Hammasini tozalash
+                    </button>
+                  </div>
+                )}
+                <p className="shop-result-count" role="status">
                   {products.length} ta mahsulot
+                  {products.length > 0 &&
+                    ` · ${pageStart + 1}–${Math.min(pageStart + CATALOG_PAGE_SIZE, products.length)} ko‘rsatilmoqda`}
                 </p>
                 {!products.length ? (
                   <Empty
@@ -364,7 +455,11 @@ export default function Shop({ session, onUpdate }) {
                       <button
                         className="shop-button shop-button-secondary"
                         onClick={() =>
-                          patch({ query: "", category: "Barchasi" })
+                          patch({
+                            query: "",
+                            category: "Barchasi",
+                            sort: "popular",
+                          })
                         }
                       >
                         Filtrlarni tozalash
@@ -375,7 +470,7 @@ export default function Shop({ session, onUpdate }) {
                   </Empty>
                 ) : (
                   <div className="shop-grid">
-                    {products.map((product) => (
+                    {visibleProducts.map((product) => (
                       <article
                         className="shop-product"
                         key={product.id}
@@ -432,6 +527,49 @@ export default function Shop({ session, onUpdate }) {
                       </article>
                     ))}
                   </div>
+                )}
+                {pageCount > 1 && (
+                  <nav
+                    className="shop-pagination"
+                    aria-label="Katalog sahifalari"
+                  >
+                    <span>
+                      {currentPage} / {pageCount} sahifa
+                    </span>
+                    <div>
+                      <button
+                        aria-label="Oldingi sahifa"
+                        disabled={currentPage === 1}
+                        onClick={() => changePage(currentPage - 1)}
+                      >
+                        <ArrowLeft size={15} />
+                        <span>Oldingi</span>
+                      </button>
+                      {Array.from(
+                        { length: pageCount },
+                        (_, index) => index + 1,
+                      ).map((page) => (
+                        <button
+                          key={page}
+                          aria-label={`Katalog sahifasi ${page}`}
+                          aria-current={
+                            page === currentPage ? "page" : undefined
+                          }
+                          onClick={() => changePage(page)}
+                        >
+                          {page}
+                        </button>
+                      ))}
+                      <button
+                        aria-label="Keyingi sahifa"
+                        disabled={currentPage === pageCount}
+                        onClick={() => changePage(currentPage + 1)}
+                      >
+                        <span>Keyingi</span>
+                        <ArrowRight size={15} />
+                      </button>
+                    </div>
+                  </nav>
                 )}
               </div>
             </div>
