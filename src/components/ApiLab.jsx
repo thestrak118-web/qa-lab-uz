@@ -72,8 +72,8 @@ export default function ApiLab({ session, onUpdate }) {
       <section className="panel api-main">
         <div className="panel-heading">
           <div>
-            <span className="eyebrow">API WORKBENCH</span>
-            <h2>Javobni ham tekshiring.</h2>
+            <span className="eyebrow">API / So‘rov va javob</span>
+            <h2>So‘rov yuborish</h2>
           </div>
           <Braces size={24} />
         </div>

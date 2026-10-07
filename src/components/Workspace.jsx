@@ -458,6 +458,11 @@ export default function Workspace({ session, onUpdate, tab = "checklist" }) {
         .toLocaleLowerCase()
         .includes(query.toLocaleLowerCase()),
   );
+  const recordKey = (item) =>
+    `${isReport ? "BUG" : tab === "cases" ? "TC" : "CHK"}-${String(item.id)
+      .replace(/[^a-zA-Z0-9]/g, "")
+      .slice(0, 6)
+      .toUpperCase()}`;
   const completed = items.filter((item) =>
     isReport
       ? item.status === "Closed"
@@ -467,67 +472,59 @@ export default function Workspace({ session, onUpdate, tab = "checklist" }) {
     <section className="workspace" aria-label={meta.title}>
       <header className="workspace-header">
         <div>
-          <div className="workspace-eyebrow">SIZNING ISH MAYDONINGIZ</div>
-          <h1 ref={headingRef} tabIndex={-1}>
-            {meta.title}
+          <h2 ref={headingRef} tabIndex={-1}>
+            {isReport
+              ? "Muammolar ro‘yxati"
+              : tab === "cases"
+                ? "Test-case’lar ro‘yxati"
+                : "Tekshiruvlar ro‘yxati"}
             <span className="workspace-total">{items.length}</span>
-          </h1>
+          </h2>
           <p>{meta.subtitle}</p>
         </div>
-        <button
-          type="button"
-          className="btn btn-secondary workspace-export"
-          onClick={exportAll}
-          disabled={!items.length}
-        >
-          <Download size={16} /> {isReport ? "Markdown eksport" : "CSV eksport"}
-        </button>
+        <div className="workspace-header-actions">
+          <button
+            type="button"
+            className="btn btn-secondary workspace-export"
+            onClick={exportAll}
+            disabled={!items.length}
+          >
+            <Download size={16} />{" "}
+            {isReport ? "Markdown eksport" : "CSV eksport"}
+          </button>
+          <button type="button" className="btn btn-primary" onClick={openNew}>
+            <Plus size={16} />
+            {meta.action}
+          </button>
+        </div>
       </header>
 
-      <div className="workspace-guide">
-        <span className="workspace-guide-icon">
-          <BookOpen size={19} />
-        </span>
-        <div>
-          <strong>
-            {isReport
-              ? "Aniq dalil — foydali report"
-              : "Reja → amalda tekshirish → natija"}
-          </strong>
-          <p>{meta.intro}</p>
-        </div>
-      </div>
+      <details className="workspace-guide">
+        <summary>
+          <BookOpen size={15} /> {meta.singular} qanday yoziladi?
+        </summary>
+        <p>{meta.intro}</p>
+      </details>
       <div className="workspace-summary">
         <div>
           <span>Jami yozuv</span>
-          <strong>{items.length.toString().padStart(2, "0")}</strong>
+          <strong>{items.length}</strong>
         </div>
         <div>
           <span>{isReport ? "Ochiq muammolar" : "Bajarilgan testlar"}</span>
-          <strong>
-            {(isReport ? items.length - completed : completed)
-              .toString()
-              .padStart(2, "0")}
-          </strong>
+          <strong>{isReport ? items.length - completed : completed}</strong>
         </div>
         <div>
           <span>{isReport ? "Yopilgan" : "Xato aniqlangan"}</span>
           <strong className={isReport ? "" : "workspace-error-number"}>
-            {(isReport
+            {isReport
               ? completed
-              : items.filter((item) => item.status === "Failed").length
-            )
-              .toString()
-              .padStart(2, "0")}
+              : items.filter((item) => item.status === "Failed").length}
           </strong>
         </div>
         <div className="workspace-summary-note">
           <Check size={16} />
-          <span>
-            Holatni siz belgilaysiz.
-            <br />
-            Saqlash — test o‘tganini tasdiqlamaydi.
-          </span>
+          <span>Natijalar qo‘lda belgilanadi</span>
         </div>
       </div>
 
@@ -894,10 +891,9 @@ export default function Workspace({ session, onUpdate, tab = "checklist" }) {
             </option>
           ))}
         </select>
-        <button type="button" className="btn btn-primary" onClick={openNew}>
-          <Plus size={17} />
-          {meta.action}
-        </button>
+        <span className="workspace-toolbar-count">
+          {visibleItems.length} ta yozuv
+        </span>
       </div>
 
       {!items.length ? (
@@ -951,21 +947,24 @@ export default function Workspace({ session, onUpdate, tab = "checklist" }) {
             </div>
           )}
           <div className="workspace-records">
+            {visibleItems.length > 0 && (
+              <div className="workspace-table-header" aria-hidden="true">
+                <span>ID</span>
+                <span>{isReport ? "Muammo" : "Tekshiruv"}</span>
+                <span>Holat</span>
+                <span>Amallar</span>
+              </div>
+            )}
             {visibleItems.map((item) => (
               <article key={item.id} className="workspace-record">
                 <div className="workspace-record-top">
                   <span
                     className={`workspace-record-index ${isReport ? "workspace-record-bug" : ""}`}
                   >
-                    {isReport ? (
-                      <Bug size={17} />
-                    ) : (
-                      String(
-                        items.findIndex((entry) => entry.id === item.id) + 1,
-                      ).padStart(2, "0")
-                    )}
+                    {recordKey(item)}
                   </span>
                   <div className="workspace-record-title">
+                    <h3>{item.title}</h3>
                     <div className="workspace-record-tags">
                       {item.requirementId && (
                         <span className="workspace-requirement-tag">
@@ -982,23 +981,22 @@ export default function Workspace({ session, onUpdate, tab = "checklist" }) {
                       {item.priority && <span>{item.priority}</span>}
                       {item.module && <span>{item.module}</span>}
                     </div>
-                    <h3>{item.title}</h3>
                   </div>
+                  <select
+                    className={`workspace-status workspace-status-${slug(item.status).toLowerCase()}`}
+                    aria-label={`${item.title}: holati`}
+                    value={item.status}
+                    onChange={(event) =>
+                      changeStatus(item.id, event.target.value)
+                    }
+                  >
+                    {statuses.map((status) => (
+                      <option key={status} value={status}>
+                        {STATUS_LABELS[status]}
+                      </option>
+                    ))}
+                  </select>
                   <div className="workspace-record-actions">
-                    <select
-                      className={`workspace-status workspace-status-${slug(item.status).toLowerCase()}`}
-                      aria-label={`${item.title}: holati`}
-                      value={item.status}
-                      onChange={(event) =>
-                        changeStatus(item.id, event.target.value)
-                      }
-                    >
-                      {statuses.map((status) => (
-                        <option key={status} value={status}>
-                          {STATUS_LABELS[status]}
-                        </option>
-                      ))}
-                    </select>
                     <button
                       type="button"
                       className="workspace-icon-btn"
@@ -1018,49 +1016,55 @@ export default function Workspace({ session, onUpdate, tab = "checklist" }) {
                   </div>
                 </div>
                 <div className="workspace-record-details">
-                  {tab !== "checklist" && (
-                    <details>
-                      <summary>Qadamlar va test tafsilotlari</summary>
-                      <div className="workspace-expanded-details">
-                        {item.preconditions && (
+                  <details className="workspace-record-disclosure">
+                    <summary>
+                      {tab === "checklist"
+                        ? "Kutilgan va haqiqiy natija"
+                        : "Qadamlar va test tafsilotlari"}
+                    </summary>
+                    {tab !== "checklist" && (
+                      <div>
+                        <div className="workspace-expanded-details">
+                          {item.preconditions && (
+                            <div>
+                              <strong>Boshlang‘ich shartlar</strong>
+                              <p>{item.preconditions}</p>
+                            </div>
+                          )}
+                          {item.data && (
+                            <div>
+                              <strong>Test ma’lumotlari</strong>
+                              <p>{item.data}</p>
+                            </div>
+                          )}
                           <div>
-                            <strong>Boshlang‘ich shartlar</strong>
-                            <p>{item.preconditions}</p>
+                            <strong>Qadamlar</strong>
+                            <p>
+                              {asText(item.steps) || "Qadamlar kiritilmagan."}
+                            </p>
                           </div>
-                        )}
-                        {item.data && (
-                          <div>
-                            <strong>Test ma’lumotlari</strong>
-                            <p>{item.data}</p>
-                          </div>
-                        )}
-                        <div>
-                          <strong>Qadamlar</strong>
-                          <p>
-                            {asText(item.steps) || "Qadamlar kiritilmagan."}
-                          </p>
+                          {isReport && (
+                            <div>
+                              <strong>Muhit</strong>
+                              <p>{item.environment || "Kiritilmagan."}</p>
+                            </div>
+                          )}
                         </div>
-                        {isReport && (
-                          <div>
-                            <strong>Muhit</strong>
-                            <p>{item.environment || "Kiritilmagan."}</p>
-                          </div>
-                        )}
                       </div>
-                    </details>
-                  )}
-                  <div className="workspace-results">
-                    <div>
-                      <span>KUTILGAN NATIJA</span>
-                      <p>{item.expected || "Hali kiritilmagan."}</p>
+                    )}
+                    <div className="workspace-results">
+                      <div>
+                        <span>Kutilgan natija</span>
+                        <p>{item.expected || "Hali kiritilmagan."}</p>
+                      </div>
+                      <div>
+                        <span>Haqiqiy natija</span>
+                        <p className={!item.actual ? "workspace-muted" : ""}>
+                          {item.actual || "Testni bajargach natijani yozing."}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <span>HAQIQIY NATIJA</span>
-                      <p className={!item.actual ? "workspace-muted" : ""}>
-                        {item.actual || "Testni bajargach natijani yozing."}
-                      </p>
-                    </div>
-                  </div>
+                  </details>
                   {isReport && (
                     <div className="workspace-report-bottom">
                       <div className="workspace-report-attachments">

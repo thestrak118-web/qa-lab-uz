@@ -79,6 +79,8 @@ Eksportdagi yozuv va rasmlar shaxsiy ma’lumotlarni o‘z ichiga olishi mumkin;
 
 ## Lab chegaralari
 
+Do‘kondagi mahsulot suratlari ilova bilan birga yuklanadi. Ularning manbalari va litsenziyasi [PRODUCT_IMAGES.md](public/PRODUCT_IMAGES.md) faylida berilgan.
+
 Do‘kon, buyurtmalar va to‘lovlar — mashq uchun simulyatsiya. Haqiqiy mahsulot yuborilmaydi va haqiqiy pul yechilmaydi. API paneli ham **brauzer ichidagi simulyator**, tashqi xizmatga ulanadigan haqiqiy backend emas. Uni real serverning autentifikatsiya, xavfsizlik, yuklama yoki tarmoq barqarorligini tekshirish vositasi deb qabul qilmang.
 
 Review javoblar katalogini ochadi, o‘zingiz reportlar bilan bog‘laysiz. Maydonlar to‘liqligi mazmunning to‘g‘riligiga avtomatik baho emas. U talabni tushunish, test qamrovini rejalash va hisobotning inson uchun tushunarli ekanini baholash o‘rnini bosmaydi.

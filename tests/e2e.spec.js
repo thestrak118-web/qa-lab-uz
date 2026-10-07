@@ -31,7 +31,7 @@ async function nav(page, name) {
 async function open(page) {
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Bugun nimani tekshiramiz?" }),
+    page.getByRole("heading", { name: "Loyiha ko‘rinishi" }),
   ).toBeVisible();
   await saved(page);
 }
@@ -161,13 +161,11 @@ test("documents and screenshot evidence survive a real reload; exports are usabl
   await page
     .getByLabel("Haqiqiy natija *", { exact: true })
     .fill("AIR natijasiz. Avtomatlashtirilgan sinov yozuvi.");
-  await page
-    .locator(".workspace input[type=file]")
-    .setInputFiles({
-      name: "search-evidence.png",
-      mimeType: "image/png",
-      buffer: png,
-    });
+  await page.locator(".workspace input[type=file]").setInputFiles({
+    name: "search-evidence.png",
+    mimeType: "image/png",
+    buffer: png,
+  });
   await expect(page.locator(".workspace-evidence")).toHaveCount(1);
   await page.getByRole("button", { name: "Saqlash", exact: true }).click();
   await saved(page);
@@ -222,14 +220,12 @@ test("new exercises archive prior work and fixed seeds reproduce the scenario", 
   expect(repeat.id).not.toBe(first.id);
   expect(repeat.scenario).toEqual(first.scenario);
   await nav(page, "Mashqlar tarixi");
-  const card = page
-    .locator(".history-card")
-    .filter({
-      has: page.getByRole("heading", {
-        name: "Saqlangan birinchi mashq",
-        exact: true,
-      }),
-    });
+  const card = page.locator(".history-card").filter({
+    has: page.getByRole("heading", {
+      name: "Saqlangan birinchi mashq",
+      exact: true,
+    }),
+  });
   await card.getByRole("button", { name: "Mashqni davom ettirish" }).click();
   await saved(page);
   expect(active(await stored(page)).id).toBe(first.id);
@@ -335,7 +331,7 @@ test("390px navigation, shop and authoring forms have no horizontal overflow", a
   await nav(page, "Demo do‘kon");
   await expect(page.locator(".sidebar")).not.toHaveClass(/open/);
   await expect(
-    page.getByRole("heading", { name: "Yangi sevimlilaringiz" }),
+    page.getByRole("heading", { name: "Mahsulotlar", exact: true }),
   ).toBeVisible();
   await noOverflow();
   await page

@@ -5,7 +5,7 @@ test("API requests share the shop session and reject malformed checkout state", 
 }) => {
   await page.goto("/");
   await page
-    .getByRole("heading", { name: "Bugun nimani tekshiramiz?" })
+    .getByRole("heading", { name: "Loyiha ko‘rinishi" })
     .waitFor();
   await page
     .getByRole("button", { name: "API laboratoriya", exact: true })
@@ -32,7 +32,7 @@ test("API requests share the shop session and reject malformed checkout state", 
   await expect(page.locator(".shop-header")).toContainText("Aziza");
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Bugun nimani tekshiramiz?" }),
+    page.getByRole("heading", { name: "Loyiha ko‘rinishi" }),
   ).toBeVisible();
   await expect(page.locator(".error-banner")).toHaveCount(0);
   await page
@@ -48,7 +48,7 @@ test("review unlock, fixed build and final report persist and export", async ({
 }) => {
   await page.goto("/");
   await page
-    .getByRole("heading", { name: "Bugun nimani tekshiramiz?" })
+    .getByRole("heading", { name: "Loyiha ko‘rinishi" })
     .waitFor();
   await page
     .getByRole("button", { name: "Natija va retest", exact: true })

@@ -90,13 +90,25 @@ const initial = () => {
   const s = freshSession();
   return { version: 1, activeId: s.id, sessions: [s] };
 };
-const date = (value) =>
-  new Intl.DateTimeFormat("uz-UZ", {
-    day: "2-digit",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(value));
+const date = (value) => {
+  const d = new Date(value);
+  const months = [
+    "yan",
+    "fev",
+    "mar",
+    "apr",
+    "may",
+    "iyun",
+    "iyul",
+    "avg",
+    "sen",
+    "okt",
+    "noy",
+    "dek",
+  ];
+  const pad = (number) => String(number).padStart(2, "0");
+  return `${pad(d.getDate())} ${months[d.getMonth()]}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 export default function App() {
   const [data, setData] = useState(null),
     [page, setPage] = useState("overview"),
@@ -252,17 +264,19 @@ export default function App() {
             <FlaskConical size={23} />
           </span>
           <span>
-            qa<span className="brand-light">lab</span>
-            <small>O‘RGAN. TEKSHIR. ISBOTLA.</small>
+            QA<span className="brand-light"> Lab</span>
+            <small>QA WORKSPACE</small>
           </span>
         </a>
         <button
           className="workspace-switch"
           onClick={() => navigate("history")}
         >
-          <span className="workspace-avatar">S</span>
+          <span className="workspace-avatar">
+            <FolderOpen size={17} />
+          </span>
           <span>
-            Shaxsiy laboratoriya<small>QA muhandisi ish maydoni</small>
+            Mashqlarim<small>{data.sessions.length} ta saqlangan mashq</small>
           </span>
           <ChevronRight size={15} />
         </button>
@@ -320,7 +334,7 @@ export default function App() {
         <div className="user-card">
           <span className="user-avatar">QA</span>
           <div>
-            QA o‘rganuvchi<small>Shaxsiy profil</small>
+            Mahalliy ish maydoni<small>Akkauntsiz foydalanish</small>
           </div>
           <span className="badge mini">LOCAL</span>
         </div>
@@ -363,18 +377,18 @@ export default function App() {
           )}
           <div className="page-heading">
             <div>
-              <div className="eyebrow">SIZNING QA LABORATORIYANGIZ</div>
-              <h1>
-                {page === "overview" ? "Bugun nimani tekshiramiz?" : title}
-              </h1>
+              <div className="eyebrow">
+                {session.scenario.brand} / QA mashqi
+              </div>
+              <h1>{page === "overview" ? "Loyiha ko‘rinishi" : title}</h1>
               <p>
                 {page === "overview"
-                  ? "Realistik vazifalar. Haqiqiy QA jarayoni. Xato qilish uchun eng to‘g‘ri joy."
+                  ? "Joriy mashqdagi tekshiruvlar, topilmalar va bajarilgan ishlar."
                   : `${session.name} · seed ${session.seed} · ${DIFFICULTY[session.difficulty]}`}
               </p>
             </div>
             <button
-              className="btn btn-primary"
+              className={`btn ${page === "overview" ? "btn-primary" : "btn-secondary"}`}
               onClick={() => setNewModal(true)}
             >
               <Plus size={17} /> Yangi mashq
@@ -428,8 +442,7 @@ export default function App() {
           {page === "guide" && <Guide navigate={navigate} />}
           <footer className="app-footer">
             <span>
-              QA Lab <span className="separator">/</span> Nazariyadan
-              amaliyotga.
+              QA Lab <span className="separator">/</span> Shaxsiy ish maydoni
             </span>
             <span>O‘quv simulyatsiyasi · haqiqiy to‘lovlar yo‘q</span>
           </footer>
@@ -510,239 +523,308 @@ export default function App() {
   );
 }
 function Overview({ session, navigate }) {
-  const executed = [...session.checklist, ...session.cases].filter(
-    (t) => t.status !== "Not run",
+  const [view, setView] = useState("cases");
+  const tests = session.cases;
+  const passed = tests.filter((item) => item.status === "Passed").length;
+  const failed = tests.filter((item) => item.status === "Failed").length;
+  const blocked = tests.filter((item) => item.status === "Blocked").length;
+  const run = passed + failed;
+  const openReports = session.reports.filter(
+    (item) => item.status !== "Closed",
   ).length;
-  const cards = [
-    [
-      "Checklist",
-      session.checklist.length,
-      "Tekshiruvlar ro‘yxati",
-      ListChecks,
-      "checklist",
-      "teal",
-    ],
-    [
-      "Test-case",
-      session.cases.length,
-      "Takrorlanadigan qadamlar",
-      Files,
-      "cases",
-      "blue",
-    ],
-    [
-      "Bug-report",
-      session.reports.length,
-      "Dalil bilan yozilgan topilma",
-      Bug,
-      "reports",
-      "orange",
-    ],
-    [
-      "Bajarilgan",
-      executed,
-      "Belgilangan test natijalari",
-      CheckCircle2,
-      "review",
-      "purple",
-    ],
+  const documents = view === "cases" ? session.cases : session.reports;
+  const records = [...documents]
+    .sort((a, b) =>
+      (b.updatedAt || b.createdAt || "").localeCompare(
+        a.updatedAt || a.createdAt || "",
+      ),
+    )
+    .slice(0, 5);
+  const modules = [
+    ...new Set(session.scenario.requirements.map((item) => item.module)),
   ];
+  const linkedRequirements = new Set(
+    [...session.checklist, ...session.cases]
+      .map((item) => item.requirementId)
+      .filter(Boolean),
+  );
+  const statusLabel = {
+    "Not run": "Tekshirilmagan",
+    Passed: "O‘tdi",
+    Failed: "Xato bor",
+    Blocked: "To‘siq bor",
+    Open: "Ochiq",
+    "In progress": "Tuzatilmoqda",
+    "Ready for retest": "Qayta test",
+    Closed: "Yopilgan",
+    Reopened: "Qayta ochilgan",
+  };
+  const statusClass = (status) =>
+    ({
+      Passed: "success",
+      Closed: "success",
+      Failed: "danger",
+      Blocked: "warning",
+      Open: "neutral",
+      "Not run": "neutral",
+    })[status] || "neutral";
   return (
     <>
-      <section className="hero">
-        <div className="hero-copy">
-          <div className="hero-tag">
-            <span className="live-dot" /> FAOL MASHQ <span>·</span>{" "}
-            {DIFFICULTY[session.difficulty]}
-          </div>
-          <h2>
-            Kuzating. Savol bering.
-            <br />
-            <span>Nuqsonni dalil bilan toping.</span>
-          </h2>
+      <section className="project-strip">
+        <span className="project-icon">
+          <Store size={24} />
+        </span>
+        <div className="project-name">
+          <h2>{session.name}</h2>
           <p>
-            {session.scenario.brand} do‘konida QA muhandisisiz. Talablarni
-            o‘qing, foydalanuvchi yo‘llarini sinang va topilmalaringizni
-            hujjatlashtiring.
+            Web ilova <span>·</span> {DIFFICULTY[session.difficulty]}{" "}
+            <span>·</span> {date(session.createdAt)}
           </p>
-          <div className="hero-actions">
-            <button className="btn btn-lime" onClick={() => navigate("shop")}>
-              <Play size={16} /> Laboratoriyani ochish{" "}
-              <ArrowUpRight size={17} />
-            </button>
-            <button
-              className="hero-link"
-              onClick={() => navigate("requirements")}
-            >
-              Talablar bilan tanishish <ArrowRight size={15} />
-            </button>
-          </div>
-          <div className="hero-meta">
-            <span>
-              SEED <b>{session.seed}</b>
-            </span>
-            <span>
-              BUILD <b>{session.fixedBugIds.length ? "1.1" : "1.0"}</b>
-            </span>
-            <span>{session.scenario.products.length} ta mahsulot</span>
-          </div>
         </div>
-        <div className="hero-art" aria-hidden="true">
-          <div className="art-grid" />
-          <div className="floating-card art-browser">
-            <div className="art-browser-top">
-              <i />
-              <i />
-              <i />
-              <span>test.environment</span>
-            </div>
-            <div className="art-code">
-              <span className="code-comment">// Har bir tafsilot muhim</span>
-              <span>
-                <b>test</b>('checkout', () =&gt; {"{"}
-              </span>
-              <span>
-                {" "}
-                <em>expect</em>(total).toBe(90);
-              </span>
-              <span>{"}"});</span>
-            </div>
-            <div className="art-results">
-              <span>
-                <CheckCircle2 size={16} /> 2 passed
-              </span>
-              <span className="art-fail">
-                <Bug size={16} /> 1 failed
-              </span>
-            </div>
-          </div>
-          <div className="art-bug">
-            <Bug size={32} />
-          </div>
-          <div className="art-verified">
-            <ShieldCheck size={19} />
-            <div>
-              Dalilga asoslangan<small>QA ENGINEERING</small>
-            </div>
-          </div>
-        </div>
+        <span className="build-label">
+          Build {session.fixedBugIds.length ? "1.1" : "1.0"}
+        </span>
+        <button className="btn btn-primary" onClick={() => navigate("shop")}>
+          Do‘konni ochish <ArrowUpRight size={16} />
+        </button>
       </section>
-      <div className="stats-grid">
-        {cards.map(([name, value, sub, Icon, target, color]) => (
-          <button
-            className="stat-card"
-            key={name}
-            onClick={() => navigate(target)}
-          >
-            <div className="stat-top">
-              <span>{name}</span>
-              <span className={`stat-icon ${color}`}>
-                <Icon size={18} />
-              </span>
-            </div>
-            <strong>{value.toString().padStart(2, "0")}</strong>
+      <section className="metrics-strip" aria-label="Mashq statistikasi">
+        <button onClick={() => navigate("cases")}>
+          <span>Test-case’lar</span>
+          <div>
+            <strong>{tests.length}</strong>
             <small>
-              {sub} <ArrowUpRight size={13} />
+              {run} bajarilgan · {blocked} to‘siqli
             </small>
-          </button>
-        ))}
-      </div>
-      <div className="overview-columns">
-        <section className="panel journey">
-          <div className="panel-heading">
-            <h2>Mashq yo‘li</h2>
-            <span className="badge">4 BOSQICH</span>
           </div>
-          {[
-            [
-              "01",
-              "Talabni tushuning",
-              "Kutilgan natija va biznes qoidalarini bilib oling.",
-              "requirements",
-              session.requirementsViewed,
-            ],
-            [
-              "02",
-              "Tekshiring va yozing",
-              "Checklist va test-case bilan izchil tekshiring.",
-              "checklist",
-              session.checklist.length > 0,
-            ],
-            [
-              "03",
-              "Topilmani isbotlang",
-              "Qadamlar, kutilgan natija va dalil bilan report yozing.",
-              "reports",
-              session.reports.length > 0,
-            ],
-            [
-              "04",
-              "Solishtiring va qayta sinang",
-              "Javoblarni ko‘ring, tuzatilgan build’da retest qiling.",
-              "review",
-              session.reviewUnlocked,
-            ],
-          ].map(([n, title, text, target, done]) => (
-            <button
-              className="journey-row"
-              key={n}
-              onClick={() => navigate(target)}
-            >
-              <span className={`step-number ${done ? "done" : ""}`}>
-                {done ? <Check size={15} /> : n}
-              </span>
-              <div>
-                <h3>{title}</h3>
-                <p>{text}</p>
-              </div>
-              <ChevronRight size={16} />
-            </button>
-          ))}
-        </section>
-        <section className="panel activity-panel">
-          <div className="panel-heading">
-            <h2>So‘nggi harakatlar</h2>
-            <Clock3 size={17} />
+        </button>
+        <button onClick={() => navigate("checklist")}>
+          <span>Checklist</span>
+          <div>
+            <strong>{session.checklist.length}</strong>
+            <small>
+              {
+                session.checklist.filter((item) => item.status === "Passed")
+                  .length
+              }{" "}
+              o‘tgan tekshiruv
+            </small>
           </div>
-          {session.activity.length ? (
-            session.activity.slice(0, 5).map((a) => (
-              <div className="activity-row" key={a.id}>
-                <span className="activity-dot" />
-                <div>
-                  <b>{a.action}</b>
-                  <p>{a.detail}</p>
-                  <small>{date(a.at)}</small>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="quiet-empty">
-              <span>
-                <Store size={25} />
-              </span>
-              <h3>Birinchi tekshiruvni boshlang</h3>
-              <p>Do‘kondagi harakatlaringiz bu yerda qayd etiladi.</p>
-              <button className="text-button" onClick={() => navigate("shop")}>
-                Do‘konga o‘tish <ArrowRight size={14} />
+        </button>
+        <button onClick={() => navigate("reports")}>
+          <span>Ochiq bug-reportlar</span>
+          <div>
+            <strong>{openReports}</strong>
+            <small>{session.reports.length} jami hisobot</small>
+          </div>
+        </button>
+        <button onClick={() => navigate("review")}>
+          <span>Test-case natijalari</span>
+          <div>
+            <strong className={failed ? "metric-alert" : ""}>{failed}</strong>
+            <small>xato · {passed} o‘tgan</small>
+          </div>
+        </button>
+      </section>
+      <div className="dashboard-columns">
+        <div className="dashboard-primary">
+          <section className="panel work-table-panel">
+            <div className="panel-heading">
+              <h2>So‘nggi hujjatlar</h2>
+              <button className="text-button" onClick={() => navigate(view)}>
+                Barchasi <ArrowRight size={14} />
               </button>
             </div>
-          )}
-        </section>
-      </div>
-      <div className="tip-banner">
-        <span className="tip-icon">
-          <Sparkles size={20} />
-        </span>
-        <div>
-          <b>Har safar yangi vaziyat. Har safar ko‘proq tajriba.</b>
-          <p>
-            Yangi mashqda mahsulotlar, joylashuv va nuqsonlar almashadi. Joriy
-            mashq refresh’da o‘zgarmaydi.
-          </p>
+            <div
+              className="document-tabs"
+              role="group"
+              aria-label="Hujjat turi"
+            >
+              <button
+                aria-pressed={view === "cases"}
+                className={view === "cases" ? "selected" : ""}
+                onClick={() => setView("cases")}
+              >
+                Test-case’lar <span>{session.cases.length}</span>
+              </button>
+              <button
+                aria-pressed={view === "reports"}
+                className={view === "reports" ? "selected" : ""}
+                onClick={() => setView("reports")}
+              >
+                Bug-report’lar <span>{session.reports.length}</span>
+              </button>
+            </div>
+            <div className="dashboard-table-scroll">
+              <table className="dashboard-table">
+                <thead>
+                  <tr>
+                    <th>Hujjat</th>
+                    <th>Talab</th>
+                    <th>Holat</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {records.map((item) => (
+                    <tr key={item.id}>
+                      <td>
+                        <button onClick={() => navigate(view)}>
+                          {view === "cases" ? (
+                            <Files size={15} />
+                          ) : (
+                            <Bug size={15} />
+                          )}
+                          <span>{item.title}</span>
+                        </button>
+                      </td>
+                      <td>
+                        <code>{item.requirementId || "—"}</code>
+                      </td>
+                      <td>
+                        <span className={`badge ${statusClass(item.status)}`}>
+                          {statusLabel[item.status] || item.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!records.length && (
+              <div className="table-empty">
+                <Files size={26} />
+                <h3>
+                  {view === "cases"
+                    ? "Hali test-case yozilmagan"
+                    : "Hali bug-report yozilmagan"}
+                </h3>
+                <p>
+                  {view === "cases"
+                    ? "Talabni tanlang, qadamlar va kutilgan natijani yozing."
+                    : "Do‘konda topgan muammongizni qadamlar va dalil bilan yozing."}
+                </p>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => navigate(view)}
+                >
+                  <Plus size={15} />
+                  {view === "cases" ? "Test-case yozish" : "Bug-report yozish"}
+                </button>
+              </div>
+            )}
+          </section>
+          <section className="panel coverage-panel">
+            <div className="panel-heading">
+              <div>
+                <h2>Talablar qamrovi</h2>
+                <p>Checklist yoki test-case bilan bog‘langan talablar</p>
+              </div>
+              <button
+                className="text-button"
+                onClick={() => navigate("requirements")}
+              >
+                Talablar <ArrowUpRight size={14} />
+              </button>
+            </div>
+            <div className="coverage-rows">
+              {modules.map((module) => {
+                const requirements = session.scenario.requirements.filter(
+                  (item) => item.module === module,
+                );
+                const count = requirements.filter((item) =>
+                  linkedRequirements.has(item.id),
+                ).length;
+                return (
+                  <button key={module} onClick={() => navigate("requirements")}>
+                    <span>{module}</span>
+                    <span className="coverage-track">
+                      <i
+                        style={{
+                          width: `${(count / requirements.length) * 100}%`,
+                        }}
+                      />
+                    </span>
+                    <small>
+                      {count} / {requirements.length}
+                    </small>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
         </div>
-        <button className="text-button" onClick={() => navigate("guide")}>
-          Qanday ishlaydi? <ArrowUpRight size={15} />
-        </button>
+        <aside className="dashboard-secondary">
+          <section className="panel project-details">
+            <div className="panel-heading">
+              <h2>Mashq tafsilotlari</h2>
+              <ClipboardList size={16} />
+            </div>
+            <dl>
+              <div>
+                <dt>Muhit</dt>
+                <dd>Demo do‘kon</dd>
+              </div>
+              <div>
+                <dt>Versiya</dt>
+                <dd>
+                  {session.fixedBugIds.length ? "1.1 — retest" : "1.0 — asosiy"}
+                </dd>
+              </div>
+              <div>
+                <dt>Daraja</dt>
+                <dd>{DIFFICULTY[session.difficulty]}</dd>
+              </div>
+              <div>
+                <dt>Seed</dt>
+                <dd>
+                  <code>{session.seed}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>Talablar</dt>
+                <dd>{session.scenario.requirements.length} ta</dd>
+              </div>
+            </dl>
+            <button
+              className="text-button"
+              onClick={() => navigate("requirements")}
+            >
+              Talablar bilan tanishish <ArrowRight size={14} />
+            </button>
+          </section>
+          <section className="panel activity-panel">
+            <div className="panel-heading">
+              <h2>Faoliyat</h2>
+              <Clock3 size={16} />
+            </div>
+            {session.activity.length ? (
+              session.activity.slice(0, 4).map((item) => (
+                <div className="activity-row" key={item.id}>
+                  <span className="activity-dot" />
+                  <div>
+                    <b>{item.action}</b>
+                    <p>{item.detail}</p>
+                    <small>{date(item.at)}</small>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="activity-empty">
+                Do‘kon va API’dagi amallar bu yerda qayd etiladi.
+              </p>
+            )}
+          </section>
+          <div className="onboarding-note">
+            <BookOpen size={18} />
+            <div>
+              <b>Birinchi marta ishlayapsizmi?</b>
+              <p>Checklist → test-case → bug-report tartibida mashq qiling.</p>
+              <button className="text-button" onClick={() => navigate("guide")}>
+                Qisqa yo‘riqnoma <ArrowRight size={13} />
+              </button>
+            </div>
+          </div>
+        </aside>
       </div>
     </>
   );
@@ -758,7 +840,7 @@ function Requirements({ session }) {
     <>
       <div className="section-intro">
         <div>
-          <h2>Sizning tekshirish manbangiz</h2>
+          <h2>Qabul mezonlari</h2>
           <p>
             Do‘kon qanday ishlashi kerakligi shu yerda yozilgan. Amaldagi
             xatti-harakatni ushbu qoidalar bilan solishtiring.
@@ -835,7 +917,7 @@ function Review({ session, onUpdate, onReveal, navigate }) {
             <LockKeyhole size={30} />
           </span>
           <span className="eyebrow">AVVAL MUSTAQIL TEKSHIRING</span>
-          <h2>Yashirin xatolar shu yerda kutmoqda.</h2>
+          <h2>Mashq javoblari</h2>
           <p>
             Checklist, test-case va reportlaringizni yozing. Tayyor bo‘lgach
             javoblarni ochib, topilmalaringizni solishtiring.
@@ -1081,7 +1163,7 @@ function Guide({ navigate }) {
       <section className="panel guide-banner">
         <BookOpen size={33} />
         <div>
-          <h2>QA bo‘lishni QA qilib o‘rganing.</h2>
+          <h2>Laboratoriyadan foydalanish</h2>
           <p>
             Bu yerda faqat tugma bosish emas, tekshiruvni rejalash, dalil yozish
             va xulosa chiqarishni mashq qilasiz.

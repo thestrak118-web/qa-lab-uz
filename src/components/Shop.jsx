@@ -2,11 +2,8 @@ import React, { useEffect } from "react";
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
   CheckCircle2,
   ChevronRight,
-  Headphones,
-  Heart,
   LogOut,
   Minus,
   Package,
@@ -15,7 +12,6 @@ import {
   ShieldCheck,
   ShoppingBag,
   SlidersHorizontal,
-  Sparkles,
   Star,
   Trash2,
   Truck,
@@ -36,69 +32,15 @@ function ProductArt({ product, small = false }) {
   return (
     <div
       className={`shop-art shop-art-${product.icon}${small ? " shop-art-small" : ""}`}
-      style={{ "--product-bg": product.color }}
-      aria-hidden="true"
     >
-      <div className="shop-art-shadow" />
-      {product.icon === "headphones" && (
-        <div className="shop-object-headphones">
-          <i className="shop-headband" />
-          <i className="shop-ear shop-ear-left" />
-          <i className="shop-ear shop-ear-right" />
-        </div>
-      )}
-      {product.icon === "earbuds" && (
-        <div className="shop-object-earbuds">
-          <i />
-          <i />
-          <b />
-        </div>
-      )}
-      {product.icon === "speaker" && (
-        <div className="shop-object-speaker">
-          <i />
-          <b />
-        </div>
-      )}
-      {product.icon === "mouse" && (
-        <div className="shop-object-mouse">
-          <i />
-        </div>
-      )}
-      {product.icon === "keyboard" && (
-        <div className="shop-object-keyboard">
-          {Array.from({ length: 35 }, (_, i) => (
-            <i key={i} />
-          ))}
-        </div>
-      )}
-      {product.icon === "bottle" && (
-        <div className="shop-object-bottle">
-          <i />
-          <span>daily.</span>
-        </div>
-      )}
-      {product.icon === "lamp" && (
-        <div className="shop-object-lamp">
-          <i />
-          <b />
-          <span />
-        </div>
-      )}
-      {product.icon === "watch" && (
-        <div className="shop-object-watch">
-          <i />
-          <b>
-            09<span>41</span>
-          </b>
-        </div>
-      )}
-      {product.icon === "box" && (
-        <div className="shop-object-box">
-          <i />
-          <b />
-        </div>
-      )}
+      <img
+        src={`/products/${product.icon}.jpg`}
+        alt={`${product.name} — namuna surati`}
+        width="720"
+        height="720"
+        loading={small ? "eager" : "lazy"}
+        decoding="async"
+      />
     </div>
   );
 }
@@ -263,22 +205,10 @@ export default function Shop({ session, onUpdate }) {
       className={`shop-shell shop-variant-${scenario.variant}`}
       aria-label={`${scenario.brand} test do‘koni`}
     >
-      <div className="shop-browser">
-        <div className="shop-browser-dots">
-          <i />
-          <i />
-          <i />
-        </div>
-        <div>
-          <ShieldCheck size={12} /> {scenario.brand.toLowerCase()}.demo /{" "}
-          {state.view === "catalog" ? "shop" : state.view}
-        </div>
-        <span>TEST MUHITI</span>
-      </div>
       <div className="shop-top-note">
-        <span>Yaxshi narsalar, oddiy hayot uchun.</span>
+        <span>Elektronika va uy uchun mahsulotlar</span>
         <span>
-          300 000 so‘mdan yetkazish bepul <ArrowRight size={12} />
+          <Truck size={13} /> 300 000 so‘mdan yetkazish bepul
         </span>
       </div>
       <header className="shop-header">
@@ -287,12 +217,13 @@ export default function Shop({ session, onUpdate }) {
           onClick={() => navigate("catalog")}
           aria-label="Do‘kon bosh sahifasi"
         >
-          <span className="shop-brand-mark">
-            {scenario.brand.charAt(0).toLowerCase()}
-            <i />
-          </span>
-          {scenario.brand.toLowerCase()}
-          <span className="shop-brand-dot">.</span>
+          <ShoppingBag
+            className="shop-brand-mark"
+            size={24}
+            strokeWidth={2.2}
+          />
+          {scenario.brand}
+          <span className="shop-brand-label">market</span>
         </button>
         <nav aria-label="Do‘kon navigatsiyasi">
           <button
@@ -348,57 +279,23 @@ export default function Shop({ session, onUpdate }) {
 
       {state.view === "catalog" && (
         <>
-          <div className="shop-hero">
+          <div className="shop-promotion">
             <div>
-              <span className="shop-eyebrow">
-                <span /> KUNDALIK HAYOT, YANGICHA
-              </span>
-              <h2>
-                Kichik detallar.
-                <br />
-                <em>Katta qulaylik.</em>
-              </h2>
-              <p>
-                Ishlash, dam olish va o‘zingiz uchun.
-                <br />
-                Sizga mos buyumlarni bir joydan toping.
-              </p>
-              <button
-                onClick={() =>
-                  document
-                    .getElementById(`catalog-${session.id}`)
-                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
-                }
-              >
-                To‘plamni ko‘rish <ArrowRight size={16} />
-              </button>
+              <strong>Xaridingizga 10% chegirma</strong>
+              <p>100 000 so‘mdan xarid qiling. Kuponni savatda kiriting.</p>
             </div>
-            <div className="shop-hero-visual">
-              <span className="shop-hero-ring" />
-              <ProductArt
-                product={scenario.products.find((p) => p.id === "p1")}
-              />
-              <span className="shop-hero-tag">
-                <span>
-                  <Star size={12} fill="currentColor" /> 4.8
-                </span>{" "}
-                Air One <small>Har bir tovushni his qiling</small>
-              </span>
-              <span className="shop-floating-tag">
-                <Sparkles size={13} /> Yangi to‘plam
-              </span>
+            <div className="shop-promotion-code">
+              <span>Kupon kodi</span>
+              <b>QA10</b>
             </div>
           </div>
           <div className="shop-catalog" id={`catalog-${session.id}`}>
             <div className="shop-section-heading">
               <div>
-                <span className="shop-eyebrow">SIZ UCHUN TANLANDI</span>
-                <h3>
-                  Yangi sevimlilaringiz <span>{scenario.products.length}</span>
-                </h3>
+                <h3>Mahsulotlar</h3>
               </div>
               <span className="shop-catalog-subtitle">
-                Kamroq shovqin. Yaxshiroq tanlov.
+                {scenario.products.length} ta mahsulot · narxlar so‘mda
               </span>
             </div>
             <div className="shop-tools">
@@ -478,7 +375,7 @@ export default function Shop({ session, onUpdate }) {
                   </Empty>
                 ) : (
                   <div className="shop-grid">
-                    {products.map((product, index) => (
+                    {products.map((product) => (
                       <article
                         className="shop-product"
                         key={product.id}
@@ -494,10 +391,8 @@ export default function Shop({ session, onUpdate }) {
                             <span className="shop-badge shop-badge-unavailable">
                               Tugagan
                             </span>
-                          ) : product.id === "p1" ? (
-                            <span className="shop-badge">Bestseller</span>
-                          ) : index === 1 ? (
-                            <span className="shop-badge">Yangi</span>
+                          ) : product.stock <= 2 ? (
+                            <span className="shop-badge">Oz qoldi</span>
                           ) : null}
                           <span className="shop-product-view">
                             <Plus size={16} />
@@ -506,8 +401,8 @@ export default function Shop({ session, onUpdate }) {
                         <div className="shop-product-meta">
                           <span>{product.category}</span>
                           <span>
-                            <Star size={11} fill="currentColor" />
-                            {product.rating}
+                            <Star size={12} fill="currentColor" />
+                            {product.rating} <small>({product.reviews})</small>
                           </span>
                         </div>
                         <button
@@ -530,7 +425,8 @@ export default function Shop({ session, onUpdate }) {
                             onClick={() => addToCart(product)}
                             aria-label={`${product.name} savatga qo‘shish`}
                           >
-                            <Plus size={17} />
+                            <ShoppingBag size={16} />
+                            <span>Savatga</span>
                           </button>
                         </div>
                       </article>
@@ -540,27 +436,14 @@ export default function Shop({ session, onUpdate }) {
               </div>
             </div>
           </div>
-          <div className="shop-benefits">
+          <div className="shop-delivery-info">
+            <Truck size={20} />
             <div>
-              <Truck />
-              <span>
-                <strong>Eshigingizgacha</strong>
-                <small>Qulay yetkazib berish</small>
-              </span>
-            </div>
-            <div>
-              <ShieldCheck />
-              <span>
-                <strong>Ishonchli tanlov</strong>
-                <small>Har bir mahsulotga kafolat</small>
-              </span>
-            </div>
-            <div>
-              <Headphones />
-              <span>
-                <strong>Doim yoningizda</strong>
-                <small>Savollaringizga javob beramiz</small>
-              </span>
+              <strong>Yetkazib berish</strong>
+              <p>
+                300 000 so‘mdan kam — 20 000 so‘m. 300 000 so‘mdan boshlab
+                bepul.
+              </p>
             </div>
           </div>
         </>
@@ -573,7 +456,7 @@ export default function Shop({ session, onUpdate }) {
           </button>
           <div className="shop-page-heading">
             <h2>Sizning savatingiz</h2>
-            <p>Yaxshi tanlov. Qolganini bizga qo‘yib bering.</p>
+            <p>Miqdorlarni tekshiring va buyurtmani rasmiylashtiring.</p>
           </div>
           {!totals.lines.length ? (
             <Empty
@@ -729,7 +612,7 @@ export default function Shop({ session, onUpdate }) {
           </button>
           <div className="shop-page-heading">
             <h2>Buyurtmani rasmiylashtirish</h2>
-            <p>Yangi narsalargacha yana bir qadam.</p>
+            <p>Aloqa ma’lumotlari, manzil va to‘lov usulini kiriting.</p>
           </div>
           {!totals.lines.length ? (
             <Empty
@@ -1025,7 +908,7 @@ export default function Shop({ session, onUpdate }) {
               <span className="shop-login-icon">
                 <UserRound size={25} />
               </span>
-              <h2>Yana ko‘rishganimizdan xursandmiz</h2>
+              <h2>Hisobga kirish</h2>
               <p>Hisobingizga kiring va xaridni davom ettiring.</p>
               <div className="shop-field">
                 <label htmlFor={`email-${session.id}`}>Email</label>
@@ -1076,9 +959,13 @@ export default function Shop({ session, onUpdate }) {
       )}
 
       <footer className="shop-footer">
-        <strong>{scenario.brand.toLowerCase()}.</strong>
-        <span>Oddiy tanlov. Yaxshi hayot.</span>
-        <small>QA Lab uchun yaratilgan demo do‘kon</small>
+        <strong>
+          {scenario.brand}
+          <span> market</span>
+        </strong>
+        <small>
+          O‘quv do‘koni · mahsulotlar va buyurtmalar simulyatsiya qilinadi
+        </small>
       </footer>
       {selected && (
         <div
