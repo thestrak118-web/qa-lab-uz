@@ -89,6 +89,149 @@ export function validateBackup(data) {
   ];
   const severities = ["Critical", "High", "Medium", "Low"];
   const difficulties = ["beginner", "standard", "expert"];
+  const checkId = (value) =>
+    text(value) && /^AT-(?:0[1-9]|1[0-4])$/.test(value);
+  const linkId = (value) => value === "" || checkId(value);
+  const checkStatuses = ["Passed", "Failed", "Unavailable"];
+  const dimensionMaximums = { statuses: 60, findings: 25, documentation: 15 };
+  const decimalScore = (value, max) =>
+    number(value) &&
+    value <= max &&
+    Math.abs(value * 10 - Math.round(value * 10)) < 1e-8;
+  const timestamp = (value) =>
+    date(value) && new Date(value).toISOString() === value;
+
+  function assessments(items, scenarioBugIds, scenarioRequirementIds) {
+    unique(items);
+    for (const attempt of items) {
+      fields(attempt, ["createdAt", "fingerprint", "mode"]);
+      check(
+        attempt.version === 1 &&
+          timestamp(attempt.createdAt) &&
+          nonempty(attempt.fingerprint) &&
+          integer(attempt.score) &&
+          attempt.score <= 100 &&
+          ["first", "practice"].includes(attempt.mode),
+      );
+      fields(attempt.build, ["label"]);
+      check(["1.0", "1.1"].includes(attempt.build.label));
+      strings(attempt.build.fixedBugIds);
+      check(
+        new Set(attempt.build.fixedBugIds).size ===
+          attempt.build.fixedBugIds.length &&
+          attempt.build.fixedBugIds.every((id) => scenarioBugIds.has(id)),
+      );
+      unique(attempt.dimensions);
+      check(attempt.dimensions.length === 3);
+      for (const dimension of attempt.dimensions) {
+        fields(dimension, ["label", "detail"]);
+        check(
+          Object.hasOwn(dimensionMaximums, dimension.id) &&
+            dimension.max === dimensionMaximums[dimension.id] &&
+            nonempty(dimension.label) &&
+            decimalScore(dimension.score, dimension.max),
+        );
+      }
+      check(
+        attempt.score ===
+          Math.round(
+            attempt.dimensions.reduce((sum, item) => sum + item.score, 0),
+          ),
+      );
+      check(record(attempt.summary));
+      for (const field of [
+        "correct",
+        "wrong",
+        "unmarked",
+        "conflicted",
+        "available",
+        "totalChecks",
+        "matchedFindings",
+        "totalFindings",
+        "unlinkedDocuments",
+      ])
+        check(integer(attempt.summary[field]));
+      check(
+        attempt.summary.totalChecks === 14 &&
+          [
+            "correct",
+            "wrong",
+            "unmarked",
+            "conflicted",
+            "available",
+            "totalFindings",
+          ].every((key) => attempt.summary[key] <= 14) &&
+          attempt.summary.matchedFindings <= attempt.summary.totalFindings,
+      );
+      const snapshotCheckIds = unique(attempt.checks);
+      check(snapshotCheckIds.size === 14);
+      const snapshotBugIds = unique(attempt.checks, "bugId");
+      check(snapshotBugIds.size === 14);
+      for (const result of attempt.checks) {
+        fields(result, [
+          "requirementId",
+          "title",
+          "description",
+          "expected",
+          "actual",
+        ]);
+        check(
+          checkId(result.id) &&
+            result.bugId === `BUG-${result.id.slice(3)}` &&
+            scenarioRequirementIds.has(result.requirementId) &&
+            nonempty(result.title) &&
+            checkStatuses.includes(result.status),
+        );
+      }
+      const comparisonIds = unique(attempt.comparisons);
+      for (const comparison of attempt.comparisons) {
+        fields(comparison, ["title", "detail"]);
+        check(
+          ["checklist", "cases"].includes(comparison.kind) &&
+            linkId(comparison.checkId) &&
+            testStatuses.includes(comparison.claimedStatus) &&
+            (comparison.expectedStatus === null ||
+              checkStatuses.includes(comparison.expectedStatus)) &&
+            [
+              "correct",
+              "wrong",
+              "unmarked",
+              "unlinked",
+              "unavailable",
+              "sample",
+            ].includes(comparison.verdict),
+        );
+      }
+      unique(attempt.reports);
+      for (const finding of attempt.reports) {
+        fields(finding, ["title", "detail"]);
+        check(
+          !comparisonIds.has(finding.id) &&
+            linkId(finding.checkId) &&
+            [
+              "matched",
+              "incomplete",
+              "not-failing",
+              "unlinked",
+              "closed",
+              "sample",
+              "unavailable",
+            ].includes(finding.verdict),
+        );
+        strings(finding.missing);
+        check(
+          finding.missing.every(nonempty) &&
+            new Set(finding.missing).size === finding.missing.length,
+        );
+      }
+      strings(attempt.missedCheckIds);
+      check(
+        new Set(attempt.missedCheckIds).size ===
+          attempt.missedCheckIds.length &&
+          attempt.missedCheckIds.every((id) => snapshotCheckIds.has(id)),
+      );
+    }
+  }
 
   // Validate without changing the supplied backup: a rejected import must not
   // partially repair or replace any of the current user's work.
@@ -265,6 +408,7 @@ export function validateBackup(data) {
           optional(item, field, text);
         for (const field of ["createdAt", "updatedAt"])
           optional(item, field, date);
+        optional(item, "checkId", linkId);
         optional(item, "steps", steps);
         if (key !== "checklist") check(steps(item.steps));
         if (key === "reports") check(severities.includes(item.severity));
@@ -298,6 +442,8 @@ export function validateBackup(data) {
       new Set(s.fixedBugIds).size === s.fixedBugIds.length &&
         s.fixedBugIds.every((id) => bugIds.has(id)),
     );
+    if (s.assessments !== undefined)
+      assessments(s.assessments, bugIds, requirementIds);
     optional(s, "reviewUnlocked", (v) => typeof v === "boolean");
     optional(s, "notes", text);
     optional(s, "environment", text);

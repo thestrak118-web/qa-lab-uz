@@ -12,7 +12,7 @@ test("API requests share the shop session and reject malformed checkout state", 
   await expect(page.locator(".response-head .badge")).toHaveText("200");
   expect(
     JSON.parse(await page.locator(".response-code").textContent()).total,
-  ).toBe(36);
+  ).toBe(39);
   await page.getByRole("button", { name: "Login", exact: true }).click();
   await page.getByRole("button", { name: "Yuborish", exact: true }).click();
   await expect(page.locator(".response-code")).toContainText("qa@lab.uz");

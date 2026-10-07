@@ -16,6 +16,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import "../workspace.css";
+import { CHECK_DEFINITIONS } from "../lib/checks.js";
 
 const TEST_STATUSES = ["Not run", "Passed", "Failed", "Blocked"];
 const REPORT_STATUSES = [
@@ -107,7 +108,7 @@ function downloadImage(evidence) {
 }
 const markdownText = (value) => asText(value).replaceAll("\r", "");
 function reportMarkdown(report) {
-  return `# ${markdownText(report.title)}\n\n- ID: ${report.id}\n- Modul: ${report.module || "—"}\n- Talab: ${report.requirementId || "—"}\n- Severity: ${report.severity}\n- Priority: ${report.priority}\n- Holat: ${report.status}\n- Muhit: ${report.environment || "—"}\n\n## Takrorlash qadamlari\n${markdownText(report.steps)}\n\n## Kutilgan natija\n${markdownText(report.expected)}\n\n## Haqiqiy natija\n${markdownText(report.actual)}\n\n## Dalillar\n${report.evidence?.length ? report.evidence.map((item) => `- ${item.name} (rasmni laboratoriyadan alohida yuklab oling)`).join("\n") : "Rasm biriktirilmagan."}\n`;
+  return `# ${markdownText(report.title)}\n\n- ID: ${report.id}\n- Modul: ${report.module || "—"}\n- Talab: ${report.requirementId || "—"}\n- Avto mezon: ${report.checkId || "Tanlanmagan"}\n- Severity: ${report.severity}\n- Priority: ${report.priority}\n- Holat: ${report.status}\n- Muhit: ${report.environment || "—"}\n\n## Takrorlash qadamlari\n${markdownText(report.steps)}\n\n## Kutilgan natija\n${markdownText(report.expected)}\n\n## Haqiqiy natija\n${markdownText(report.actual)}\n\n## Dalillar\n${report.evidence?.length ? report.evidence.map((item) => `- ${item.name} (rasmni laboratoriyadan alohida yuklab oling)`).join("\n") : "Rasm biriktirilmagan."}\n`;
 }
 
 function Field({ label, hint, children, wide }) {
@@ -199,6 +200,7 @@ export default function Workspace({
     id: uid(),
     title: "",
     requirementId: "",
+    checkId: "",
     expected: "",
     actual: "",
     status: isReport ? "Open" : "Not run",
@@ -258,6 +260,7 @@ export default function Workspace({
     const requirement = requirements.find((item) => item.id === requirementId);
     patchDraft({
       requirementId,
+      checkId: "",
       ...(isReport && requirement?.module
         ? { module: requirement.module }
         : {}),
@@ -443,6 +446,7 @@ export default function Workspace({
             "id",
             "title",
             "requirementId",
+            "checkId",
             "preconditions",
             "data",
             "steps",
@@ -454,6 +458,7 @@ export default function Workspace({
             "id",
             "title",
             "requirementId",
+            "checkId",
             "expected",
             "actual",
             "status",
@@ -644,6 +649,68 @@ export default function Workspace({
                 <p>
                   {requirements.find((item) => item.id === draft.requirementId)
                     ?.description || "Talab tafsilotlari ssenariy sahifasida."}
+                </p>
+              </div>
+            )}
+            <Field
+              label="Avto baholash mezoni"
+              hint={
+                draft.requirementId &&
+                !CHECK_DEFINITIONS.some(
+                  (item) => item.requirementId === draft.requirementId,
+                )
+                  ? "Bu talabni qo‘lda tekshirasiz; unga hozircha avto mezon qo‘shilmagan."
+                  : "Natijangiz faqat tanlangan aniq holat bilan solishtiriladi. Mezon tanlanmagan yozuv avtomatik holat balliga kirmaydi."
+              }
+              wide
+            >
+              <select
+                className="field"
+                value={draft.checkId || ""}
+                onChange={(event) => {
+                  const check = CHECK_DEFINITIONS.find(
+                    (item) => item.id === event.target.value,
+                  );
+                  patchDraft({
+                    checkId: event.target.value,
+                    ...(check
+                      ? {
+                          requirementId: check.requirementId,
+                          ...(isReport
+                            ? {
+                                module:
+                                  requirements.find(
+                                    (item) => item.id === check.requirementId,
+                                  )?.module || "",
+                              }
+                            : {}),
+                        }
+                      : {}),
+                  });
+                }}
+              >
+                <option value="">
+                  Mezon tanlang — avtomatik solishtirish uchun
+                </option>
+                {CHECK_DEFINITIONS.filter(
+                  (item) =>
+                    !draft.requirementId ||
+                    item.requirementId === draft.requirementId,
+                ).map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.id} · {item.title}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {draft.checkId && (
+              <div className="workspace-selected-requirement">
+                <BookOpen size={15} />
+                <p>
+                  {
+                    CHECK_DEFINITIONS.find((item) => item.id === draft.checkId)
+                      ?.description
+                  }
                 </p>
               </div>
             )}
@@ -998,6 +1065,9 @@ export default function Workspace({
                         </span>
                       )}
                       {item.priority && <span>{item.priority}</span>}
+                      <span title="Avtomatik baholash mezoni">
+                        {item.checkId || "Avto mezon tanlanmagan"}
+                      </span>
                       {item.module && <span>{item.module}</span>}
                     </div>
                   </div>

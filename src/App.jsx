@@ -45,6 +45,8 @@ import Workspace from "./components/Workspace.jsx";
 import ApiLab from "./components/ApiLab.jsx";
 import ThemeToggle from "./components/ThemeToggle.jsx";
 import PracticeGuide from "./components/PracticeGuide.jsx";
+import Assessment from "./components/Assessment.jsx";
+import { createAssessment, assessmentFingerprint } from "./lib/assessment.js";
 const DIFFICULTY = {
   beginner: "Boshlang‘ich",
   standard: "Amaliyot",
@@ -927,6 +929,27 @@ function Review({ session, onUpdate, onReveal, navigate }) {
   ).length;
   return (
     <>
+      <Assessment
+        session={session}
+        isStale={Boolean(
+          session.assessments?.length &&
+          session.assessments.at(-1).fingerprint !==
+            assessmentFingerprint(session),
+        )}
+        onSubmit={() => {
+          const assessment = createAssessment(session);
+          const assessments = [...(session.assessments || []), assessment];
+          validateBackup({
+            version: 1,
+            activeId: session.id,
+            sessions: [{ ...session, assessments, reviewUnlocked: true }],
+          });
+          onUpdate((current) => ({
+            assessments: [...(current.assessments || []), assessment],
+            reviewUnlocked: true,
+          }));
+        }}
+      />
       <div className="stats-grid review-stats">
         <div className="stat-card">
           <span>Hisobotlar</span>
@@ -954,8 +977,9 @@ function Review({ session, onUpdate, onReveal, navigate }) {
           <span className="eyebrow">AVVAL MUSTAQIL TEKSHIRING</span>
           <h2>Mashq javoblari</h2>
           <p>
-            Checklist, test-case va reportlaringizni yozing. Tayyor bo‘lgach
-            javoblarni ochib, topilmalaringizni solishtiring.
+            Ball olish uchun yuqoridagi «Mashqni topshirish»dan foydalaning.
+            Javoblarni baholashsiz ochsangiz, keyingi topshirishlar mashq rejimi
+            deb belgilanadi.
           </p>
           <div className="inline">
             <button
@@ -1237,8 +1261,8 @@ function Guide({ navigate }) {
             "Faqat demo hisoblar bilan ishlang. Screenshotlarga haqiqiy parol, token yoki shaxsiy ma’lumot qo‘shmang.",
           ],
           [
-            "Bu avtomatik imtihonmi?",
-            "Yo‘q. Maydonlar to‘liqligi ko‘rsatiladi, lekin reportning mazmunini avtomatik tasdiqlamaydi. Javoblarni ochgach o‘z dalilingiz bilan solishtirasiz.",
+            "Avtomatik baholash qanday ishlaydi?",
+            "Yozuvni aniq avto baholash mezoniga bog‘lang. Natija va retest’da mashqni topshirsangiz, 14 ta aniq holat sinovdan o‘tadi va belgilaringiz bilan solishtiriladi. Ball: holat mosligi 60, reportning xatoli mezonga mosligi 25, maydonlar to‘liqligi 15. Report matni va screenshot ma’nosi tekshirilmaydi. Bu o‘quv bahosi, sertifikat imtihoni emas.",
           ],
         ].map(([q, a]) => (
           <details key={q}>

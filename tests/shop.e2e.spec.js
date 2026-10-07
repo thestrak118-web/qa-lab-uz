@@ -240,7 +240,12 @@ test("catalog pages cover every product and filters reset the current page", asy
   ).toBeDisabled();
   const allIds = [];
   const pages = Math.ceil(scenario.products.length / 12);
+  expect(scenario.products).toHaveLength(39);
+  expect(pages).toBe(4);
   for (let current = 1; current <= pages; current++) {
+    await expect(shop.locator(".shop-product")).toHaveCount(
+      current === 4 ? 3 : 12,
+    );
     await expect(shop.locator(".shop-result-count")).toHaveText(
       `${scenario.products.length} ta mahsulot · ${(current - 1) * 12 + 1}–${Math.min(current * 12, scenario.products.length)} ko‘rsatilmoqda`,
     );
@@ -273,7 +278,7 @@ test("catalog pages cover every product and filters reset the current page", asy
     pager.getByRole("button", { name: "Katalog sahifasi 1", exact: true }),
   ).toHaveAttribute("aria-current", "page");
   await pager
-    .getByRole("button", { name: "Katalog sahifasi 3", exact: true })
+    .getByRole("button", { name: "Katalog sahifasi 4", exact: true })
     .click();
   await shop
     .getByRole("combobox", { name: "Mahsulotlarni saralash" })
@@ -288,7 +293,7 @@ test("catalog pages cover every product and filters reset the current page", asy
       .map((product) => `product-${product.id}`),
   );
   await pager
-    .getByRole("button", { name: "Katalog sahifasi 3", exact: true })
+    .getByRole("button", { name: "Katalog sahifasi 4", exact: true })
     .click();
   await shop.getByRole("button", { name: "Audio", exact: true }).click();
   expect(await productIds()).toEqual(

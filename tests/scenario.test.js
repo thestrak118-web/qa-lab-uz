@@ -58,9 +58,9 @@ test("seed regenerates an identical scenario, difficulty spreads defects across 
 
 test("expanded catalog contains distinct products with useful details and boundary-test stock", () => {
   const s = createScenario("expanded-catalog");
-  assert.equal(s.products.length, 36);
+  assert.equal(s.products.length, 39);
   for (const key of ["id", "name", "sku", "description"])
-    assert.equal(new Set(s.products.map((p) => p[key])).size, 36, key);
+    assert.equal(new Set(s.products.map((p) => p[key])).size, 39, key);
   const photoTypes = new Set([
     "headphones",
     "speaker",
@@ -112,7 +112,7 @@ test("catalog expansion preserves established seed defect selections and layouts
 test("new catalog products participate in API search, totals and order snapshots", () => {
   const s = { ...createScenario("expanded-api"), bugs: [] };
   const all = simulateApi(s, initialProductState(), [], { path: "/products" });
-  assert.equal(all.body.total, 36);
+  assert.equal(all.body.total, 39);
   const headset = s.products.find((p) => p.id === "p33");
   const result = simulateApi(s, initialProductState(), [], {
     path: `/products?search=${headset.sku}&category=Audio`,
@@ -135,6 +135,39 @@ test("new catalog products participate in API search, totals and order snapshots
   );
   assert.equal(order.body.order.total, totals.total);
   assert.equal(order.productState.cart.length, 0);
+});
+
+test("the three added products can be searched, purchased and preserved in order snapshots", () => {
+  const s = { ...createScenario("catalog-39-orders"), bugs: [] };
+  let state = initialProductState();
+  const ids = ["p37", "p38", "p39"];
+  for (const id of ids) {
+    const product = s.products.find((item) => item.id === id);
+    assert.ok(product.stock > 0);
+    const result = simulateApi(s, state, [], {
+      path: `/products?search=${product.sku.toLowerCase()}&category=${encodeURIComponent(product.category)}`,
+    });
+    assert.equal(result.status, 200);
+    assert.deepEqual(
+      result.body.data.map((item) => item.id),
+      [id],
+    );
+    state = changeCart(s, state, [], id, 1);
+  }
+  assert.equal(state.cart.length, 3);
+  const expectedSubtotal = ids.reduce(
+    (sum, id) => sum + s.products.find((product) => product.id === id).price,
+    0,
+  );
+  assert.equal(calculateCart(s, state).total, expectedSubtotal);
+  const response = call(s, state, "/orders", validFields);
+  assert.equal(response.status, 201);
+  assert.deepEqual(
+    response.body.order.items.map((item) => item.productId),
+    ids,
+  );
+  assert.equal(response.body.order.total, expectedSubtotal);
+  assert.equal(response.productState.cart.length, 0);
 });
 
 test("catalog query is case insensitive and intersects category, sorting; regressions can be fixed", () => {
