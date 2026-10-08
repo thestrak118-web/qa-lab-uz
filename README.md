@@ -52,7 +52,7 @@ npm run preview
 
 `dist/` — joylashtirishga tayyor statik sayt. `npm test` avtomatik mantiqiy testlarni, `npm run test:e2e` esa Playwright brauzer testlarini ishga tushiradi. Brauzer testlari tizimdagi `/usr/bin/chromium` yoki `CHROMIUM_PATH` dan foydalanadi. Ular bo‘lmasa, `npx playwright install chromium` bilan Playwright brauzerini o‘rnating.
 
-Firefox va WebKit uchun tegishli brauzerni `npx playwright install --with-deps firefox webkit` orqali o‘rnating, so‘ng `QA_BROWSER=firefox npm run test:e2e` yoki `QA_BROWSER=webkit npm run test:e2e` buyrug‘ini bajaring. GitHub Actions har push va pull request’da mantiqiy testlar, build va Chromium sinovlarini avtomatik bajaradi.
+Firefox va WebKit uchun tegishli brauzerni `npx playwright install --with-deps firefox webkit` orqali o‘rnating, so‘ng `QA_BROWSER=firefox npm run test:e2e` yoki `QA_BROWSER=webkit npm run test:e2e` buyrug‘ini bajaring. GitHub Actions `main` tarmog‘iga har push va har bir pull request’da mantiqiy testlar, build va Chromium sinovlarini avtomatik bajaradi.
 
 ## Vercel’ga joylashtirish
 
