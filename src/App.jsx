@@ -450,7 +450,19 @@ export default function App() {
             </button>
           </div>
           {page === "overview" && (
-            <Overview session={session} navigate={navigate} />
+            <Overview
+              session={session}
+              navigate={navigate}
+              onOpenDocument={(tab, recordId) => {
+                setComposeRequest({
+                  id: uid(),
+                  sessionId: session.id,
+                  tab,
+                  recordId,
+                });
+                navigate(tab);
+              }}
+            />
           )}
           {page === "requirements" && (
             <Requirements
@@ -637,7 +649,7 @@ export default function App() {
     </div>
   );
 }
-function Overview({ session, navigate }) {
+function Overview({ session, navigate, onOpenDocument }) {
   const [view, setView] = useState("cases");
   const tests = session.cases.filter((item) => !isSampleDocument(item));
   const passed = tests.filter((item) => item.status === "Passed").length;
@@ -786,7 +798,7 @@ function Overview({ session, navigate }) {
                   {records.map((item) => (
                     <tr key={item.id}>
                       <td>
-                        <button onClick={() => navigate(view)}>
+                        <button onClick={() => onOpenDocument(view, item.id)}>
                           {view === "cases" ? (
                             <Files size={15} />
                           ) : (

@@ -374,6 +374,25 @@ export default function Workspace({
     )
       return;
     handledComposeRef.current = composeRequest.id;
+    if (composeRequest.sessionId && composeRequest.sessionId !== session.id) {
+      onComposeHandled?.();
+      return;
+    }
+    if (composeRequest.recordId) {
+      const item = items.find((entry) => entry.id === composeRequest.recordId);
+      if (item) {
+        // A recovered draft for this record is newer than the saved row.
+        // Resume it directly; opening another record uses the usual warning.
+        if (draft?.id === item.id) {
+          editorRef.current?.querySelector("input")?.focus();
+          setRevealId(item.id);
+        } else if (edit(item)) {
+          setRevealId(item.id);
+        }
+      }
+      onComposeHandled?.();
+      return;
+    }
     const requirement = requirements.find(
       (item) => item.id === composeRequest.requirementId,
     );
@@ -383,7 +402,7 @@ export default function Workspace({
     onComposeHandled?.();
   }, [composeRequest?.id, session.id, tab]);
   const edit = (item) => {
-    beginDraft(
+    return beginDraft(
       {
         ...item,
         steps: asText(item.steps),
