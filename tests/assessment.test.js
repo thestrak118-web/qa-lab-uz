@@ -439,3 +439,135 @@ test("assessment snapshots do not change when learner documents or repair lists 
   result.build.fixedBugIds.push("BUG-99");
   assert.ok(!session.fixedBugIds.includes("BUG-99"));
 });
+
+test("clean build never grants absent-report points for wrong or unmarked work", () => {
+  for (const status of ["Failed", "Blocked", "Not run"]) {
+    const session = fresh();
+    session.fixedBugIds = session.scenario.bugs.map((bug) => bug.id);
+    const checks = runChecks(session.scenario, session.fixedBugIds);
+    session.checklist = [{ ...checklistFor(checks[0]), status }];
+    const result = assess(session);
+    assert.equal(result.score, 0, status);
+    assert.ok(
+      result.dimensions.every((entry) => entry.score === 0),
+      status,
+    );
+  }
+});
+
+test("clean-build report exemptions grow only with correctly verified coverage", () => {
+  const session = fresh();
+  session.fixedBugIds = session.scenario.bugs.map((bug) => bug.id);
+  const checks = runChecks(session.scenario, session.fixedBugIds);
+  session.checklist = checks.slice(0, 7).map((check) => checklistFor(check));
+  const half = assess(session);
+  assert.equal(half.score, 50);
+  assert.equal(dimension(half, "statuses"), 30);
+  assert.equal(dimension(half, "findings"), 12.5);
+  assert.equal(dimension(half, "documentation"), 7.5);
+  session.cases = [
+    { ...session.checklist[0], id: "conflict", status: "Failed" },
+  ];
+  const conflict = assess(session);
+  assert.equal(conflict.summary.correct, 6);
+  assert.equal(conflict.summary.conflicted, 1);
+  assert.ok(
+    conflict.dimensions.every(
+      (entry, index) => entry.score < half.dimensions[index].score,
+    ),
+  );
+  session.cases = [];
+  session.checklist = checks.map((check) => checklistFor(check));
+  assert.equal(assess(session).score, 100);
+});
+
+test("unlinked or unavailable claims do not claim clean-build coverage", () => {
+  const session = fresh();
+  session.fixedBugIds = session.scenario.bugs.map((bug) => bug.id);
+  session.scenario.products = session.scenario.products.filter(
+    (product) => product.stock > 0,
+  );
+  const checks = runChecks(session.scenario, session.fixedBugIds);
+  session.checklist = [
+    {
+      ...checklistFor(checks.find((check) => check.id === "AT-04")),
+      status: "Passed",
+    },
+    { ...checklistFor(checks[0]), requirementId: "REQ-10", status: "Passed" },
+  ];
+  const result = assess(session);
+  assert.equal(result.score, 0);
+  assert.equal(result.summary.correct, 0);
+  assert.equal(result.comparisons[0].verdict, "unavailable");
+  assert.equal(result.comparisons[1].verdict, "unlinked");
+});
+
+test("untouched legacy environment scaffolds are missing fields, while real environment text counts", () => {
+  const session = fresh();
+  const failing = runChecks(session.scenario).find(
+    (check) => check.status === "Failed",
+  );
+  for (const environment of [
+    "Brauzer: … / OS: … / Ekran o‘lchami: …",
+    "  Brauzer: ... / OS: ... / Ekran o'lchami: ...  ",
+  ]) {
+    session.reports = [{ ...reportFor(failing), environment }];
+    const result = assess(session);
+    assert.equal(result.reports[0].verdict, "incomplete");
+    assert.deepEqual(result.reports[0].missing, ["Muhit"]);
+    assert.equal(result.summary.matchedFindings, 0);
+    assert.ok(dimension(result, "documentation") < 15);
+  }
+  session.reports[0].environment =
+    "Brauzer: Chromium / OS: Linux / Ekran o‘lchami:390×844";
+  assert.equal(assess(session).reports[0].verdict, "matched");
+});
+
+test("partial imported requirements do not grade absent scope as tested", () => {
+  const session = fresh();
+  session.scenario.requirements = session.scenario.requirements.filter(
+    (requirement) => requirement.id === "REQ-01",
+  );
+  complete(session);
+  const result = assess(session);
+  assert.equal(result.summary.available, 1);
+  assert.equal(result.summary.correct, 1);
+  assert.equal(
+    result.checks.filter((check) => check.status === "Unavailable").length,
+    13,
+  );
+  assert.equal(result.score, 100);
+  assert.ok(result.comparisons.every((row) => row.checkId === "AT-01"));
+});
+
+test("grading revision invalidates old fingerprints without rewriting saved scores", () => {
+  const session = complete();
+  const historical = assess(session);
+  historical.fingerprint = historical.fingerprint.replace(
+    "grade-v2-",
+    "grade-v1-",
+  );
+  session.assessments = [historical];
+  const original = structuredClone(historical);
+  assert.match(assessmentFingerprint(session), /^grade-v2-[a-f0-9]{8}$/);
+  assert.notEqual(assessmentFingerprint(session), historical.fingerprint);
+  const freshAttempt = assess(session);
+  assert.equal(freshAttempt.version, 1, "snapshot schema stays compatible");
+  assert.deepEqual(session.assessments[0], original);
+});
+
+test("only the leading sample marker excludes a document from grading", () => {
+  const session = complete();
+  for (const item of [...session.checklist, ...session.reports])
+    item.title = `Tester qaydi: ${item.title} — [Namuna] yorlig‘i tekshirildi`;
+  const result = assess(session);
+  assert.equal(result.score, 100);
+  assert.ok(result.comparisons.every((row) => row.verdict === "correct"));
+  assert.ok(result.reports.every((row) => row.verdict === "matched"));
+  session.checklist[0].title = `  [NAMUNA] ${session.checklist[0].title}`;
+  session.reports[0].title = `  [namuna] ${session.reports[0].title}`;
+  const excluded = assess(session);
+  assert.equal(excluded.comparisons[0].verdict, "sample");
+  assert.equal(excluded.reports[0].verdict, "sample");
+  assert.ok(excluded.score < 100);
+});

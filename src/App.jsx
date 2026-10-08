@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   FlaskConical,
   LayoutDashboard,
@@ -25,6 +25,7 @@ import {
   RefreshCw,
   LockKeyhole,
   CheckCircle2,
+  AlertCircle,
   Circle,
   Clock3,
   Save,
@@ -34,12 +35,9 @@ import {
   Sparkles,
 } from "lucide-react";
 import { createScenario, initialProductState } from "./lib/scenario.js";
-import {
-  loadWorkspace,
-  saveWorkspace,
-  downloadFile,
-  validateBackup,
-} from "./lib/storage.js";
+import { downloadFile, validateBackup } from "./lib/storage.js";
+import { useWorkspace } from "./lib/useWorkspace.js";
+import { useDialogFocus } from "./lib/useDialogFocus.js";
 import Shop from "./components/Shop.jsx";
 import Workspace from "./components/Workspace.jsx";
 import ApiLab from "./components/ApiLab.jsx";
@@ -47,6 +45,11 @@ import ThemeToggle from "./components/ThemeToggle.jsx";
 import PracticeGuide from "./components/PracticeGuide.jsx";
 import Assessment from "./components/Assessment.jsx";
 import { createAssessment, assessmentFingerprint } from "./lib/assessment.js";
+import { isSampleDocument } from "./lib/practice.js";
+import {
+  mergeImportedSessions,
+  prepareImportedSessions,
+} from "./lib/importWorkspace.js";
 const DIFFICULTY = {
   beginner: "Boshlang‘ich",
   standard: "Amaliyot",
@@ -114,74 +117,58 @@ const date = (value) => {
   return `${pad(d.getDate())} ${months[d.getMonth()]}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 export default function App() {
-  const [data, setData] = useState(null),
-    [page, setPage] = useState("overview"),
-    [saveState, setSaveState] = useState("loading"),
-    [storageError, setStorageError] = useState(""),
-    [notice, setNotice] = useState(""),
+  const {
+    data,
+    setData,
+    saveState,
+    storageError,
+    conflict,
+    retrySave,
+    openSaved,
+    canRetry,
+  } = useWorkspace(initial);
+  const [page, setPage] = useState("overview"),
+    [notice, setNoticeState] = useState(null),
     [newModal, setNewModal] = useState(false),
     [composeRequest, setComposeRequest] = useState(null),
     [mobile, setMobile] = useState(false),
-    [reveal, setReveal] = useState(false);
+    [compact, setCompact] = useState(
+      () => window.matchMedia("(max-width: 760px)").matches,
+    ),
+    [reveal, setReveal] = useState(false),
+    [largeImport, setLargeImport] = useState(null),
+    [importing, setImporting] = useState(false);
   const fileRef = useRef(),
-    ready = useRef(false),
-    revision = useRef(0);
+    sidebarRef = useRef(),
+    previousPage = useRef(page),
+    importModeRef = useRef(false),
+    importingRef = useRef(false),
+    latestData = useRef(data);
   useEffect(() => {
-    let active = true;
-    loadWorkspace()
-      .then((stored) => {
-        if (!active) return;
-        if (stored) validateBackup(stored);
-        setData(stored || initial());
-        ready.current = true;
-      })
-      .catch((e) => {
-        if (active) {
-          setStorageError(
-            "Saqlangan ishlarni o‘qib bo‘lmadi. Yangi ishni JSON orqali eksport qiling. " +
-              e.message,
-          );
-          setData(initial());
-        }
-      });
-    return () => {
-      active = false;
+    latestData.current = data;
+  }, [data]);
+  const setNotice = (message, kind = "success") =>
+    setNoticeState(message ? { message, kind } : null);
+  useDialogFocus(sidebarRef, compact && mobile, () => setMobile(false));
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 760px)");
+    const change = () => {
+      setCompact(media.matches);
+      if (!media.matches) setMobile(false);
     };
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
   }, []);
   useEffect(() => {
-    if (!data || !ready.current) return;
-    const rev = ++revision.current;
-    setSaveState("saving");
-    saveWorkspace(data)
-      .then(() => {
-        if (rev === revision.current) {
-          setSaveState("saved");
-          setStorageError("");
-        }
-      })
-      .catch((e) => {
-        setSaveState("error");
-        setStorageError(
-          "Brauzerga saqlash muvaffaqiyatsiz. JSON zaxirani yuklab oling: " +
-            e.message,
-        );
-      });
-  }, [data]);
+    if (previousPage.current !== page && !composeRequest)
+      document.querySelector(".page-heading h1")?.focus();
+    previousPage.current = page;
+  }, [page, composeRequest]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 4000);
     return () => clearTimeout(timer);
   }, [notice]);
-  useEffect(() => {
-    const warn = (e) => {
-      if (saveState === "saving" || saveState === "error") {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [saveState]);
   const navigate = (p) => {
     if (p === "requirements")
       setData((prev) =>
@@ -225,38 +212,71 @@ export default function App() {
     );
     setNotice("Barcha mashqlar va dalillar JSON zaxiraga yozildi.");
   }
-  async function importAll(event) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if (file.size > 50 * 1024 * 1024) {
-      setNotice("Fayl hajmi 50 MB dan oshmasligi kerak.");
-      return;
-    }
+  async function finishImport(file, asCopy) {
+    if (importingRef.current) return;
+    importingRef.current = true;
+    setImporting(true);
     try {
       const imported = validateBackup(JSON.parse(await file.text()));
-      let added = 0;
-      setData((prev) => {
-        const known = new Set(prev.sessions.map((s) => s.id));
-        const extra = imported.sessions.filter((s) => !known.has(s.id));
-        added = extra.length;
-        return { ...prev, sessions: [...prev.sessions, ...extra] };
+      const incoming = prepareImportedSessions(imported, {
+        asCopy,
+        reservedIds: latestData.current.sessions.map((session) => session.id),
       });
+      const result = mergeImportedSessions(latestData.current, incoming);
+      setData((prev) => mergeImportedSessions(prev, incoming).workspace);
       setNotice(
-        "Zaxira import qilindi. Mavjud ID’li mashqlar o‘zgartirilmadi.",
+        `Zaxira import qilindi: ${result.added} ta ${asCopy ? "alohida nusxa" : "mashq"} qo‘shildi${result.skipped ? `, ${result.skipped} ta mavjud ID o‘tkazib yuborildi` : ""}. Mavjud mashqlar o‘zgartirilmadi.`,
       );
     } catch (e) {
-      setNotice(e.message);
+      setNotice(
+        e instanceof SyntaxError
+          ? "JSON fayli buzilgan yoki formati noto‘g‘ri. QA Lab’dan eksport qilingan zaxira faylini tanlang."
+          : e.message,
+        "error",
+      );
+    } finally {
+      importingRef.current = false;
+      setImporting(false);
     }
+  }
+  function importAll(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || importingRef.current) return;
+    const asCopy = importModeRef.current;
+    if (file.size > 50 * 1024 * 1024) {
+      setLargeImport({ file, asCopy });
+      return;
+    }
+    finishImport(file, asCopy);
   }
   const title = NAV.find((n) => n[0] === page)?.[1];
   return (
     <div className="app-shell">
       <div
         className={`mobile-shade ${mobile ? "visible" : ""}`}
+        data-dialog-backdrop
+        aria-hidden="true"
         onClick={() => setMobile(false)}
       />
-      <aside className={`sidebar ${mobile ? "open" : ""}`}>
+      <a className="skip-link" href="#main-content">
+        Asosiy mazmunga o‘tish
+      </a>
+      <aside
+        ref={sidebarRef}
+        id="workspace-navigation"
+        className={`sidebar ${mobile ? "open" : ""}`}
+        inert={compact && !mobile ? true : undefined}
+        aria-hidden={compact && !mobile ? true : undefined}
+        aria-label="Asosiy navigatsiya"
+      >
+        <button
+          className="icon-button mobile-menu-close"
+          aria-label="Menyuni yopish"
+          onClick={() => setMobile(false)}
+        >
+          <X size={20} />
+        </button>
         <a
           href="#"
           className="brand"
@@ -292,6 +312,7 @@ export default function App() {
               key={id}
               className={`nav-item ${page === id ? "active" : ""}`}
               onClick={() => navigate(id)}
+              aria-current={page === id ? "page" : undefined}
             >
               <Icon size={18} />
               <span>{label}</span>
@@ -310,6 +331,7 @@ export default function App() {
               key={id}
               className={`nav-item ${page === id ? "active" : ""}`}
               onClick={() => navigate(id)}
+              aria-current={page === id ? "page" : undefined}
             >
               <Icon size={18} />
               <span>{label}</span>
@@ -325,7 +347,9 @@ export default function App() {
               ? "Saqlanmoqda…"
               : saveState === "saved"
                 ? "Ishlaringiz saqlangan"
-                : "Mahalliy ish maydoni"}
+                : saveState === "error"
+                  ? "Saqlanmagan o‘zgarishlar bor"
+                  : "Mahalliy ish maydoni"}
           </div>
           <p>
             Shu brauzerda saqlanadi.
@@ -350,6 +374,8 @@ export default function App() {
             <button
               className="icon-button menu-toggle"
               aria-label="Menyu"
+              aria-controls="workspace-navigation"
+              aria-expanded={compact && mobile}
               onClick={() => setMobile(!mobile)}
             >
               <Menu size={22} />
@@ -374,11 +400,32 @@ export default function App() {
             <span className="top-avatar">QA</span>
           </div>
         </header>
-        <main className="main-content">
+        <main id="main-content" className="main-content" tabIndex={-1}>
           {storageError && (
             <div className="error-banner" role="alert">
-              {storageError}
-              <button onClick={exportAll}>Zaxirani yuklash</button>
+              <div>{storageError}</div>
+              <div className="storage-recovery-actions">
+                <button onClick={exportAll}>Zaxirani yuklash</button>
+                {canRetry && (
+                  <button onClick={retrySave}>Saqlashni qayta urinish</button>
+                )}
+                {conflict && (
+                  <button
+                    onClick={async () => {
+                      exportAll();
+                      if (await openSaved()) {
+                        setComposeRequest(null);
+                        navigate("overview");
+                        setNotice(
+                          "Bu oynadagi nusxa yuklandi. Brauzerdagi eng yangi ish ochildi.",
+                        );
+                      }
+                    }}
+                  >
+                    Nusxamni yuklab, yangi ishni ochish
+                  </button>
+                )}
+              </div>
             </div>
           )}
           <div className="page-heading">
@@ -386,7 +433,9 @@ export default function App() {
               <div className="eyebrow">
                 {session.scenario.brand} / QA mashqi
               </div>
-              <h1>{page === "overview" ? "Loyiha ko‘rinishi" : title}</h1>
+              <h1 tabIndex={-1}>
+                {page === "overview" ? "Loyiha ko‘rinishi" : title}
+              </h1>
               <p>
                 {page === "overview"
                   ? "Joriy mashqdagi tekshiruvlar, topilmalar va bajarilgan ishlar."
@@ -432,6 +481,7 @@ export default function App() {
           )}
           {["checklist", "cases", "reports"].includes(page) && (
             <Workspace
+              key={`${session.id}:${page}`}
               session={session}
               onUpdate={onUpdate}
               tab={page}
@@ -456,7 +506,11 @@ export default function App() {
               setData={setData}
               navigate={navigate}
               exportAll={exportAll}
-              onImport={() => fileRef.current.click()}
+              importing={importing}
+              onImport={(asCopy = false) => {
+                importModeRef.current = asCopy;
+                fileRef.current.click();
+              }}
             />
           )}
           {page === "guide" && <Guide navigate={navigate} />}
@@ -476,10 +530,51 @@ export default function App() {
         onChange={importAll}
       />
       {notice && (
-        <div className="toast" role="status">
-          <CheckCircle2 size={18} />
-          {notice}
+        <div
+          className={`toast${notice.kind === "error" ? " toast-error" : ""}`}
+          role={notice.kind === "error" ? "alert" : "status"}
+        >
+          {notice.kind === "error" ? (
+            <AlertCircle size={18} />
+          ) : (
+            <CheckCircle2 size={18} />
+          )}
+          {notice.message}
         </div>
+      )}
+      {largeImport && (
+        <Modal
+          title="Katta zaxirani import qilish"
+          onClose={() => setLargeImport(null)}
+        >
+          <p>
+            {(largeImport.file.size / 1024 / 1024).toFixed(1)} MB zaxira
+            tanlandi. Uni o‘qish ko‘proq xotira va vaqt talab qilishi mumkin.
+          </p>
+          <p className="muted">
+            {largeImport.asCopy
+              ? "Mashqlar yangi ID bilan alohida nusxa sifatida qo‘shiladi."
+              : "Faqat yangi ID’li mashqlar qo‘shiladi. Mavjud mashqlar o‘zgarmaydi."}
+          </p>
+          <div className="modal-actions">
+            <button
+              className="btn btn-secondary"
+              onClick={() => setLargeImport(null)}
+            >
+              Bekor qilish
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                const selected = largeImport;
+                setLargeImport(null);
+                finishImport(selected.file, selected.asCopy);
+              }}
+            >
+              Importni davom ettirish
+            </button>
+          </div>
+        </Modal>
       )}
       {newModal && (
         <NewSession
@@ -544,13 +639,13 @@ export default function App() {
 }
 function Overview({ session, navigate }) {
   const [view, setView] = useState("cases");
-  const tests = session.cases;
+  const tests = session.cases.filter((item) => !isSampleDocument(item));
   const passed = tests.filter((item) => item.status === "Passed").length;
   const failed = tests.filter((item) => item.status === "Failed").length;
   const blocked = tests.filter((item) => item.status === "Blocked").length;
   const run = passed + failed;
   const openReports = session.reports.filter(
-    (item) => item.status !== "Closed",
+    (item) => !isSampleDocument(item) && item.status !== "Closed",
   ).length;
   const documents = view === "cases" ? session.cases : session.reports;
   const records = [...documents]
@@ -565,6 +660,7 @@ function Overview({ session, navigate }) {
   ];
   const linkedRequirements = new Set(
     [...session.checklist, ...session.cases]
+      .filter((item) => !isSampleDocument(item))
       .map((item) => item.requirementId)
       .filter(Boolean),
   );
@@ -613,7 +709,7 @@ function Overview({ session, navigate }) {
         <button onClick={() => navigate("cases")}>
           <span>Test-case’lar</span>
           <div>
-            <strong>{tests.length}</strong>
+            <strong>{session.cases.length}</strong>
             <small>
               {run} bajarilgan · {blocked} to‘siqli
             </small>
@@ -625,8 +721,9 @@ function Overview({ session, navigate }) {
             <strong>{session.checklist.length}</strong>
             <small>
               {
-                session.checklist.filter((item) => item.status === "Passed")
-                  .length
+                session.checklist.filter(
+                  (item) => !isSampleDocument(item) && item.status === "Passed",
+                ).length
               }{" "}
               o‘tgan tekshiruv
             </small>
@@ -919,13 +1016,25 @@ function Requirements({ session, onCompose }) {
   );
 }
 function Review({ session, onUpdate, onReveal, navigate }) {
+  const fingerprint = useMemo(
+    () => assessmentFingerprint(session),
+    [
+      session.scenario,
+      session.fixedBugIds,
+      session.checklist,
+      session.cases,
+      session.reports,
+    ],
+  );
   const bugs = session.scenario.bugs || [],
-    reports = session.reports.filter((r) => !r.title.includes("[Namuna]"));
+    reports = session.reports.filter((r) => !isSampleDocument(r));
   const linked = bugs.filter((b) =>
     reports.some((r) => r.id === session.findingLinks?.[b.id]),
   ).length;
-  const complete = reports.filter(
-    (r) => r.title && r.steps && r.expected && r.actual,
+  const hasText = (value) =>
+    (Array.isArray(value) ? value.join("\n") : value || "").trim().length > 0;
+  const complete = reports.filter((r) =>
+    [r.title, r.steps, r.expected, r.actual].every(hasText),
   ).length;
   return (
     <>
@@ -933,8 +1042,7 @@ function Review({ session, onUpdate, onReveal, navigate }) {
         session={session}
         isStale={Boolean(
           session.assessments?.length &&
-          session.assessments.at(-1).fingerprint !==
-            assessmentFingerprint(session),
+          session.assessments.at(-1).fingerprint !== fingerprint,
         )}
         onSubmit={() => {
           const assessment = createAssessment(session);
@@ -1016,6 +1124,12 @@ function Review({ session, onUpdate, onReveal, navigate }) {
                     ? []
                     : bugs.map((b) => b.id),
                   environment: `Seed ${session.seed} · Build ${session.fixedBugIds.length ? "1.0" : "1.1"} · ${window.innerWidth}×${window.innerHeight} · ${navigator.userAgent}`,
+                  productState: {
+                    ...session.productState,
+                    notice: "",
+                    errors: {},
+                    couponMessage: "",
+                  },
                 })
               }
             >
@@ -1086,12 +1200,12 @@ function Review({ session, onUpdate, onReveal, navigate }) {
               const statusCounts = ["Not run", "Passed", "Failed", "Blocked"]
                 .map(
                   (status) =>
-                    `${status}: ${session.cases.filter((c) => c.status === status).length}`,
+                    `${status}: ${session.cases.filter((c) => !isSampleDocument(c) && c.status === status).length}`,
                 )
                 .join("\n");
               downloadFile(
                 `qa-summary-${session.seed}.md`,
-                `# ${session.name} — test yakuni\n\nSeed: ${session.seed}\nDaraja: ${DIFFICULTY[session.difficulty]}\nBuild: ${session.fixedBugIds.length ? "1.1" : "1.0"}\n\n## Test-case natijalari\n${statusCounts}\n\nBug-reportlar: ${session.reports.length}\n\n## Tester xulosasi\n${session.notes || "Hali yozilmagan."}\n`,
+                `# ${session.name} — test yakuni\n\nSeed: ${session.seed}\nDaraja: ${DIFFICULTY[session.difficulty]}\nBuild: ${session.fixedBugIds.length ? "1.1" : "1.0"}\n\n## Test-case natijalari (namunasiz)\n${statusCounts}\n\nBug-reportlar (namunasiz): ${reports.length}\n\n## Tester xulosasi\n${session.notes || "Hali yozilmagan."}\n`,
                 "text/markdown;charset=utf-8",
               );
             }}
@@ -1119,7 +1233,14 @@ function Review({ session, onUpdate, onReveal, navigate }) {
     </>
   );
 }
-function HistoryView({ data, setData, navigate, exportAll, onImport }) {
+function HistoryView({
+  data,
+  setData,
+  navigate,
+  exportAll,
+  onImport,
+  importing,
+}) {
   return (
     <>
       <div className="section-intro">
@@ -1130,15 +1251,29 @@ function HistoryView({ data, setData, navigate, exportAll, onImport }) {
             bilan boshqa brauzerga ko‘chiring.
           </p>
         </div>
-        <div className="inline">
-          <button className="btn btn-secondary" onClick={onImport}>
+        <div className="inline history-import-actions" aria-busy={importing}>
+          <button
+            className="btn btn-secondary"
+            disabled={importing}
+            onClick={() => onImport(false)}
+          >
             <Upload size={16} /> JSON import
+          </button>
+          <button
+            className="btn btn-secondary"
+            disabled={importing}
+            onClick={() => onImport(true)}
+          >
+            <Upload size={16} /> JSON nusxa sifatida
           </button>
           <button className="btn btn-primary" onClick={exportAll}>
             <Download size={16} /> JSON eksport
           </button>
         </div>
       </div>
+      {importing && (
+        <p className="muted">Zaxira o‘qilmoqda va tekshirilmoqda…</p>
+      )}
       <div className="history-grid">
         {data.sessions.map((s) => (
           <article className="panel history-card" key={s.id}>
@@ -1185,7 +1320,9 @@ function HistoryView({ data, setData, navigate, exportAll, onImport }) {
       <div className="info-note">
         Ma’lumotlar shu sayt manzili va brauzerga tegishli IndexedDB’da
         saqlanadi. Brauzer ma’lumotlarini tozalash ularni o‘chiradi. Import bir
-        xil ID’li mavjud mashqni almashtirmaydi.
+        xil ID’li mavjud mashqni almashtirmaydi. Konfliktdan saqlangan zaxirani
+        tiklash uchun “JSON nusxa sifatida”ni tanlang — u alohida mashq
+        yaratadi.
       </div>
     </>
   );
@@ -1276,38 +1413,7 @@ function Guide({ navigate }) {
 }
 function Modal({ title, onClose, children }) {
   const box = useRef();
-  useEffect(() => {
-    const before = document.activeElement;
-    const timer = setTimeout(
-      () => box.current?.querySelector("input,button,select,textarea")?.focus(),
-      0,
-    );
-    const key = (e) => {
-      if (e.key === "Escape") onClose();
-      if (e.key === "Tab") {
-        const items = [
-          ...box.current.querySelectorAll(
-            "button,input,select,textarea,a[href]",
-          ),
-        ].filter((e) => !e.disabled);
-        const first = items[0],
-          last = items.at(-1);
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    document.addEventListener("keydown", key);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener("keydown", key);
-      before?.focus();
-    };
-  }, []);
+  useDialogFocus(box, true, onClose);
   return (
     <div
       className="modal-backdrop"
@@ -1355,7 +1461,7 @@ function NewSession({ onClose, onCreate }) {
         <label className="field">
           Mashq nomi
           <input
-            autoFocus
+            data-dialog-focus
             maxLength={80}
             value={name}
             onChange={(e) => setName(e.target.value)}

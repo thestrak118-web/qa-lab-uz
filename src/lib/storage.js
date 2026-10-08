@@ -1,3 +1,5 @@
+import { CHECK_DEFINITIONS } from "./checks.js";
+
 const DB = "qa-lab-workspace-v1";
 let opening;
 function openDB() {
@@ -6,7 +8,17 @@ function openDB() {
       const request = indexedDB.open(DB, 1);
       request.onupgradeneeded = () =>
         request.result.createObjectStore("workspace");
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => {
+          db.close();
+          opening = null;
+        };
+        db.onclose = () => {
+          opening = null;
+        };
+        resolve(db);
+      };
       request.onerror = () => {
         opening = null;
         reject(request.error);
@@ -15,24 +27,64 @@ function openDB() {
   return opening;
 }
 export async function loadWorkspace() {
+  return (await loadWorkspaceSnapshot()).data;
+}
+export async function loadWorkspaceSnapshot() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const request = db
-      .transaction("workspace")
-      .objectStore("workspace")
-      .get("state");
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject(request.error);
+    const tx = db.transaction("workspace");
+    const store = tx.objectStore("workspace");
+    const data = store.get("state"),
+      revision = store.get("revision");
+    tx.oncomplete = () =>
+      resolve({ data: data.result || null, revision: revision.result || 0 });
+    tx.onerror = (event) =>
+      reject(
+        tx.error ||
+          event.target?.error ||
+          new Error("Ma’lumotlarni o‘qib bo‘lmadi"),
+      );
+    tx.onabort = () => reject(tx.error || new Error("O‘qish bekor bo‘ldi"));
   });
 }
-export async function saveWorkspace(state) {
+export class WorkspaceConflictError extends Error {
+  constructor() {
+    super(
+      "Boshqa oynada yangi o‘zgarishlar saqlangan. Ularning ustiga yozilmadi.",
+    );
+    this.name = "WorkspaceConflictError";
+  }
+}
+export async function saveWorkspace(state, { expectedRevision } = {}) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction("workspace", "readwrite");
-    tx.objectStore("workspace").put(state, "state");
-    tx.oncomplete = resolve;
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error || new Error("Saqlash bekor bo‘ldi"));
+    const store = tx.objectStore("workspace");
+    const request = store.get("revision");
+    let nextRevision, conflict;
+    request.onsuccess = () => {
+      const currentRevision = request.result || 0;
+      if (
+        expectedRevision !== undefined &&
+        expectedRevision !== currentRevision
+      ) {
+        conflict = new WorkspaceConflictError();
+        tx.abort();
+        return;
+      }
+      nextRevision = currentRevision + 1;
+      store.put(state, "state");
+      store.put(nextRevision, "revision");
+    };
+    tx.oncomplete = () => resolve(nextRevision);
+    tx.onerror = (event) =>
+      reject(
+        tx.error ||
+          event.target?.error ||
+          new Error("Ma’lumotlarni saqlab bo‘lmadi"),
+      );
+    tx.onabort = () =>
+      reject(conflict || tx.error || new Error("Saqlash bekor bo‘ldi"));
   });
 }
 export function downloadFile(name, content, type = "application/json") {
@@ -93,6 +145,7 @@ export function validateBackup(data) {
     text(value) && /^AT-(?:0[1-9]|1[0-4])$/.test(value);
   const linkId = (value) => value === "" || checkId(value);
   const checkStatuses = ["Passed", "Failed", "Unavailable"];
+  const definitions = new Map(CHECK_DEFINITIONS.map((item) => [item.id, item]));
   const dimensionMaximums = { statuses: 60, findings: 25, documentation: 15 };
   const decimalScore = (value, max) =>
     number(value) &&
@@ -178,12 +231,18 @@ export function validateBackup(data) {
         check(
           checkId(result.id) &&
             result.bugId === `BUG-${result.id.slice(3)}` &&
-            scenarioRequirementIds.has(result.requirementId) &&
+            definitions.get(result.id)?.requirementId ===
+              result.requirementId &&
+            (result.status === "Unavailable" ||
+              scenarioRequirementIds.has(result.requirementId)) &&
             nonempty(result.title) &&
             checkStatuses.includes(result.status),
         );
       }
       const comparisonIds = unique(attempt.comparisons);
+      const resultsById = new Map(
+        attempt.checks.map((result) => [result.id, result]),
+      );
       for (const comparison of attempt.comparisons) {
         fields(comparison, ["title", "detail"]);
         check(
@@ -201,6 +260,21 @@ export function validateBackup(data) {
               "sample",
             ].includes(comparison.verdict),
         );
+        check(
+          comparison.expectedStatus ===
+            (resultsById.get(comparison.checkId)?.status || null),
+        );
+        if (["correct", "wrong"].includes(comparison.verdict))
+          check(
+            ["Passed", "Failed"].includes(comparison.claimedStatus) &&
+              ["Passed", "Failed"].includes(comparison.expectedStatus) &&
+              (comparison.claimedStatus === comparison.expectedStatus) ===
+                (comparison.verdict === "correct"),
+          );
+        if (comparison.verdict === "unavailable")
+          check(comparison.expectedStatus === "Unavailable");
+        if (comparison.verdict === "unmarked")
+          check(["Not run", "Blocked"].includes(comparison.claimedStatus));
       }
       unique(attempt.reports);
       for (const finding of attempt.reports) {
@@ -219,6 +293,13 @@ export function validateBackup(data) {
             ].includes(finding.verdict),
         );
         strings(finding.missing);
+        const status = resultsById.get(finding.checkId)?.status;
+        if (finding.verdict === "matched")
+          check(status === "Failed" && finding.missing.length === 0);
+        if (finding.verdict === "incomplete")
+          check(status === "Failed" && finding.missing.length > 0);
+        if (finding.verdict === "not-failing") check(status === "Passed");
+        if (finding.verdict === "unavailable") check(status === "Unavailable");
         check(
           finding.missing.every(nonempty) &&
             new Set(finding.missing).size === finding.missing.length,
@@ -229,6 +310,56 @@ export function validateBackup(data) {
         new Set(attempt.missedCheckIds).size ===
           attempt.missedCheckIds.length &&
           attempt.missedCheckIds.every((id) => snapshotCheckIds.has(id)),
+      );
+      const available = attempt.checks.filter(
+        (result) => result.status !== "Unavailable",
+      );
+      const failed = available.filter((result) => result.status === "Failed");
+      const groups = available.map((result) =>
+        attempt.comparisons.filter(
+          (row) =>
+            row.checkId === result.id &&
+            ["correct", "wrong"].includes(row.verdict),
+        ),
+      );
+      const correct = groups.filter(
+        (rows) => rows.length && rows.every((row) => row.verdict === "correct"),
+      ).length;
+      const wrong = groups.filter(
+        (rows) => rows.length && rows.every((row) => row.verdict === "wrong"),
+      ).length;
+      const conflicted = groups.filter(
+        (rows) => new Set(rows.map((row) => row.claimedStatus)).size > 1,
+      ).length;
+      const supported = new Set(
+        attempt.reports
+          .filter((row) => row.verdict === "matched")
+          .map((row) => row.checkId),
+      );
+      const expectedSummary = {
+        correct,
+        wrong,
+        conflicted,
+        unmarked: available.length - correct - wrong - conflicted,
+        available: available.length,
+        totalChecks: attempt.checks.length,
+        matchedFindings: supported.size,
+        totalFindings: failed.length,
+        unlinkedDocuments: [...attempt.comparisons, ...attempt.reports].filter(
+          (row) => row.verdict === "unlinked",
+        ).length,
+      };
+      check(
+        Object.entries(expectedSummary).every(
+          ([key, value]) => attempt.summary[key] === value,
+        ),
+      );
+      const missed = failed
+        .filter((result) => !supported.has(result.id))
+        .map((result) => result.id);
+      check(
+        missed.length === attempt.missedCheckIds.length &&
+          missed.every((id) => attempt.missedCheckIds.includes(id)),
       );
     }
   }

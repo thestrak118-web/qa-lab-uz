@@ -456,7 +456,7 @@ test("API errors are explicit, never fetch remote URLs, and support JSON strings
     simulateApi(clean, initialProductState(), [], {
       method: "POST",
       path: "/login",
-      body: JSON.stringify(TEST_ACCOUNT),
+      body: JSON.stringify({email: TEST_ACCOUNT.email, password: TEST_ACCOUNT.password}),
     }).status,
     200,
   );
@@ -468,7 +468,7 @@ test("API errors are explicit, never fetch remote URLs, and support JSON strings
     simulateApi(clean, initialProductState(), [], {
       path: "http://outside.invalid/products",
     }).status,
-    200,
+    400,
   );
 });
 

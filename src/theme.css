@@ -2,9 +2,109 @@
 :root {
   color-scheme: light;
   --canvas: #f6f7f9;
+  --muted: #5f6c80;
   --surface-raised: #f5f7fa;
   --surface-hover: #edf1f6;
 }
+/* Secondary copy still needs to be readable on white and raised light surfaces.
+   Status colors, selected controls and disabled controls keep their own styles. */
+html:not([data-theme="dark"])
+  :is(
+    .brand small,
+    .workspace-switch small,
+    .nav-caption,
+    .sidebar-bottom p,
+    .user-card small,
+    .breadcrumb,
+    .local-pill,
+    .eyebrow,
+    .page-heading p,
+    .panel-heading p,
+    .project-name p,
+    .build-label,
+    .metrics-strip > button > span,
+    .metrics-strip small,
+    .document-tabs button:not(.selected),
+    .dashboard-table th,
+    .dashboard-table code,
+    .table-empty p,
+    .coverage-rows small,
+    .project-details dt,
+    .activity-row p,
+    .activity-row small,
+    .activity-empty,
+    .onboarding-note b,
+    .onboarding-note p,
+    .app-footer,
+    .section-intro p,
+    .requirement p,
+    .session-strip,
+    .guide-steps,
+    .stat-card > span,
+    .stat-card small,
+    .review-locked p,
+    .build-switch p,
+    .review-bugs dt,
+    .review-bugs dd,
+    .history-counts,
+    .guide-banner p,
+    .guide-grid p,
+    .guide-faq p,
+    .empty-state,
+    .modal > p,
+    .difficulty-options small
+  ) {
+  color: var(--muted);
+}
+html:not([data-theme="dark"])
+  :is(.badge:not(.success):not(.danger):not(.warning), .step-number) {
+  color: #5f6c80;
+}
+html:not([data-theme="dark"])
+  :is(.info-note, .api-guide code, .chip:not(:disabled)) {
+  color: #506580;
+}
+html:not([data-theme="dark"]) .session-strip button:not(:disabled) {
+  color: #365f9d;
+}
+html:not([data-theme="dark"])
+  :is(
+    .shop-brand-label,
+    .shop-catalog-subtitle,
+    .shop-product-meta > span:first-child,
+    .shop-product-meta small,
+    .shop-delivery-info p,
+    .shop-footer,
+    .shop-page-heading p,
+    .shop-summary-note,
+    .shop-summary > div > span,
+    .shop-form h3 > span,
+    .shop-demo-account strong,
+    .shop-secure,
+    .shop-cart-line-info > span,
+    .shop-cart-line-info small,
+    .shop-empty p,
+    .shop-field-hint,
+    .shop-payment-options small,
+    .shop-form-note,
+    .shop-order header > div > span,
+    .shop-order-products small,
+    .shop-order-address,
+    .shop-order footer small,
+    .shop-login-card > p,
+    .shop-account-card p,
+    .shop-eyebrow,
+    .shop-rating small,
+    .shop-product-details > p,
+    .shop-detail-facts
+  ) {
+  color: #5f6c80;
+}
+
+html:not([data-theme="dark"]) .shop-rating {
+  color: #816725;
+}
+
 .theme-toggle {
   display: inline-flex;
   align-items: center;

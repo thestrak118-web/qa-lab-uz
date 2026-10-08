@@ -583,14 +583,14 @@ export function createScenario(seed = "QA-2026", difficulty = "standard") {
     ],
     [
       "p25",
-      "Tidy Duo organizer",
+      "Tidy Trio organizer",
       "Uy uchun",
       89000,
       12,
       "box",
       "#e8ecdF",
       4.5,
-      "2 ta saqlash qutisi: 20 × 14 × 8 sm va 16 × 10 × 6 sm. Ichma-ich joylashadi; mayda ofis buyumlari uchun.",
+      "3 ta qopqoqli saqlash qutisi, eng kattasi 28 × 20 × 14 sm. Ichma-ich joylashadi; hujjatlar va mayda ofis buyumlari uchun.",
     ],
     [
       "p26",
@@ -601,7 +601,7 @@ export function createScenario(seed = "QA-2026", difficulty = "standard") {
       "box",
       "#e5e9e5",
       4.7,
-      "3 qavatli modul, umumiy o‘lchami 25 × 18 × 24 sm. Har bir qavat alohida olinadi; kabel va aksessuarlar uchun.",
+      "3 ta rangli plastik quti, har biri 25 × 18 × 12 sm. Bir-birining ichiga joylanadi; kabel va aksessuarlarni alohida saqlash uchun.",
     ],
     [
       "p27",
@@ -638,25 +638,25 @@ export function createScenario(seed = "QA-2026", difficulty = "standard") {
     ],
     [
       "p30",
-      "Trek Mini suv idishi",
+      "Trek Fold suv idishi",
       "Hayot tarzi",
       49000,
       7,
       "bottle",
       "#ede6e0",
       4.3,
-      "350 ml ixcham suv idishi, burama qopqoq va yumshoq tutqich. Kichik sumkaga mos; qo‘lda yuviladi.",
+      "350 ml yig‘iladigan silikon suv idishi, burama qopqoq va yumshoq korpus. Bo‘sh holatda buklab sumkaga solinadi; qo‘lda yuviladi.",
     ],
     [
       "p31",
-      "Desk Tray organizer",
+      "Desk Cup qalamdon",
       "Uy uchun",
       109000,
       6,
       "box",
       "#e9e6de",
       4.6,
-      "32 × 22 × 4 sm ish stoli tagligi, 5 ta bo‘lim. Telefon, kalit va qalamlarni tartiblaydi; pastida sirpanmas oyoqchalar bor.",
+      "12 sm balandlikdagi tutqichli qalamdon, diametri 9 sm. Qalam, ruchka va chizish anjomlari uchun; nam mato bilan tozalanadi.",
     ],
     [
       "p32",
@@ -682,14 +682,14 @@ export function createScenario(seed = "QA-2026", difficulty = "standard") {
     ],
     [
       "p34",
-      "Read Clip chiroq",
+      "Read Glow chiroq",
       "Uy uchun",
       79000,
       13,
       "lamp",
       "#ede8e1",
       4.4,
-      "2 W kitob chirog‘i, qisqichli tayanch va 3 xil yorqinlik. Ichki batareya 4 soatgacha ishlaydi; USB-C orqali quvvatlanadi.",
+      "4 W stol chirog‘i, yumaloq soyabon va barqaror taglik. 3 xil yorqinlik; o‘qish va ish stoli uchun, quvvat kabeli to‘plamda.",
     ],
     [
       "p35",
@@ -998,15 +998,32 @@ export function simulateApi(
   request = {},
 ) {
   const state = productState || initialProductState(scenario);
+  if (!request || typeof request !== "object" || Array.isArray(request))
+    return {
+      status: 400,
+      body: { error: "So‘rov obyekt bo‘lishi kerak." },
+      duration: 12,
+    };
   const method = String(request.method || "GET").toUpperCase();
+  const requestedPath = request.path === undefined ? "/products" : request.path;
+  if (typeof requestedPath !== "string" || !/^\/(?![\/\\])/.test(requestedPath))
+    return {
+      status: 400,
+      body: {
+        error: "Faqat / bilan boshlanadigan mahalliy endpoint kiriting.",
+      },
+      duration: 12,
+    };
   let url;
   try {
-    url = new URL(request.path || "/products", "https://local.qa.invalid");
+    url = new URL(requestedPath, "https://local.qa.invalid");
   } catch {
     return { status: 400, body: { error: "Yo‘l noto‘g‘ri." }, duration: 12 };
   }
-  const path = url.pathname.replace(/^\/api/, "").replace(/\/$/, "") || "/";
-  let body = request.body || {};
+  const path =
+    url.pathname.replace(/^\/api(?=\/|$)/, "").replace(/\/$/, "") || "/";
+  let body =
+    request.body === undefined || request.body === "" ? {} : request.body;
   if (typeof body === "string") {
     try {
       body = JSON.parse(body);
@@ -1045,6 +1062,15 @@ export function simulateApi(
   if (method === "GET" && path === "/cart")
     return respond(200, calculateCart(scenario, state, fixedBugIds));
   if (method === "POST" && path === "/login") {
+    if (
+      Object.keys(body).some(
+        (key) =>
+          !["email", "password"].includes(key) || typeof body[key] !== "string",
+      )
+    )
+      return respond(400, {
+        error: "Login uchun email va password matn bo‘lishi kerak.",
+      });
     const valid =
       String(body.email || "")
         .trim()
@@ -1071,6 +1097,14 @@ export function simulateApi(
     method === "POST" &&
     ["/coupon", "/coupons", "/coupons/check"].includes(path)
   ) {
+    if (
+      Object.keys(body).some(
+        (key) => key !== "code" || typeof body[key] !== "string",
+      )
+    )
+      return respond(400, {
+        error: "Kuponning code maydoni matn bo‘lishi kerak.",
+      });
     const subtotal = calculateCart(scenario, state, fixedBugIds).subtotal;
     const result = validateCoupon(scenario, fixedBugIds, body.code, subtotal);
     return result.valid
@@ -1084,12 +1118,18 @@ export function simulateApi(
             ...state,
             coupon: String(body.code).trim(),
             couponMessage: `${result.percent}% chegirma qo‘llandi.`,
+            notice: `${result.percent}% chegirma qo‘llandi.`,
           },
         )
       : respond(
           422,
           { error: result.error },
-          { ...state, coupon: null, couponMessage: result.error },
+          {
+            ...state,
+            coupon: null,
+            couponMessage: result.error,
+            notice: result.error,
+          },
         );
   }
   if (method === "POST" && path === "/orders") {

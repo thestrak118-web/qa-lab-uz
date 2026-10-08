@@ -1,6 +1,13 @@
 /** Suggest a next action without changing the learner's recorded results. */
+export const isSampleDocument = (item) =>
+  /^\s*\[namuna\]/i.test(item.title || "");
+
 export function nextPracticeStep(session) {
-  const { checklist, cases, reports } = session;
+  const learnerWork = (items) =>
+    items.filter((item) => !isSampleDocument(item));
+  const checklist = learnerWork(session.checklist);
+  const cases = learnerWork(session.cases);
+  const reports = learnerWork(session.reports);
   const tests = [...cases, ...checklist];
 
   if (!tests.length) {

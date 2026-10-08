@@ -155,3 +155,65 @@ test("checks leave saved products, scenario, fixed IDs and unrelated learner sta
   assert.ok(!results.some((r) => r.status === "Unavailable"));
   assert.equal(JSON.stringify({ scenario, fixes, learner }), before);
 });
+
+test("checks without their requirement are unavailable in a partial imported exercise", () => {
+  const scenario = withBugs(["BUG-01"]);
+  scenario.requirements = scenario.requirements.filter(
+    (requirement) => requirement.id === "REQ-01",
+  );
+  const results = runChecks(scenario);
+  assert.equal(results.find((check) => check.id === "AT-01").status, "Failed");
+  assert.equal(runChecks(scenario, ["BUG-01"])[0].status, "Passed");
+  for (const check of results.filter((entry) => entry.id !== "AT-01")) {
+    assert.equal(check.status, "Unavailable");
+    assert.match(check.actual, /talabi mashqda mavjud emas/);
+    assert.ok(check.actual.includes(check.requirementId));
+  }
+});
+
+test("100 varied catalogs keep all fourteen probes independent under partial repairs", () => {
+  const difficulties = ["beginner", "standard", "expert"];
+  for (let index = 0; index < 100; index++) {
+    const scenario = createScenario(
+      `audit-catalog-${index}`,
+      difficulties[index % 3],
+    );
+    // Exercise fallback fixtures, different prices and stock limits, and a
+    // different catalog order. Checks must execute behavior, not depend on p1.
+    scenario.products = scenario.products.map((product) => ({
+      ...product,
+      id: `fixture-${index}-${product.id}`,
+      price: product.price + (index % 7) * 1000,
+      stock: product.stock ? product.stock + (index % 4) : 0,
+    }));
+    if (index % 2) scenario.products.reverse();
+    const fixes = scenario.bugs
+      .filter((_, bugIndex) => (bugIndex + index) % 2 === 0)
+      .map((bug) => bug.id);
+    const expectedFailures = scenario.bugs
+      .filter((bug) => !fixes.includes(bug.id))
+      .map((bug) => bug.id)
+      .sort();
+    const results = runChecks(scenario, fixes);
+    assert.equal(results.length, 14);
+    assert.ok(
+      results.every((check) => check.status !== "Unavailable"),
+      `seed ${index}`,
+    );
+    assert.deepEqual(
+      results
+        .filter((check) => check.status === "Failed")
+        .map((check) => check.bugId)
+        .sort(),
+      expectedFailures,
+      `seed ${index}`,
+    );
+    assert.ok(
+      runChecks(
+        scenario,
+        scenario.bugs.map((bug) => bug.id),
+      ).every((check) => check.status === "Passed"),
+      `repaired seed ${index}`,
+    );
+  }
+});

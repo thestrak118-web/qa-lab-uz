@@ -14,12 +14,12 @@ export const CHECK_DEFINITIONS = Object.freeze(
     [
       "REQ-01",
       "Qidiruv: harf registri",
-      "Bir so‘zni kichik va katta harfda qidirib, natijalarni solishtiring.",
+      "Katalogdagi mavjud mahsulot nomidan bir so‘zni kichik va katta harfda qidiring. Ikkala natijada ham shu mahsulot chiqishi kerak; ikkala natijaning bo‘shligi muvaffaqiyat emas.",
     ],
     [
       "REQ-02",
       "Kategoriya filtri",
-      "Audio kategoriyasini tanlab, natijalarning kategoriyalarini tekshiring.",
+      "Audio kategoriyasini tanlab, natijalarning barcha sahifalaridagi kategoriyalarini tekshiring.",
     ],
     [
       "REQ-02",
@@ -446,6 +446,13 @@ const runners = [
 export function runChecks(scenario, fixedBugIds = []) {
   return CHECK_DEFINITIONS.map((definition, index) => {
     try {
+      need(
+        Array.isArray(scenario?.requirements) &&
+          scenario.requirements.some(
+            (requirement) => requirement.id === definition.requirementId,
+          ),
+        `Bu mezonning ${definition.requirementId} talabi mashqda mavjud emas.`,
+      );
       const result = runners[index](structuredClone(scenario), [
         ...fixedBugIds,
       ]);

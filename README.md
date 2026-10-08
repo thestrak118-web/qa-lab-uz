@@ -4,12 +4,13 @@ O‘zbek tilida QA mashq qilish uchun veb ilova. Bir oynada demo do‘konni teks
 
 ## Katalog va qulayliklar
 
-- **39 ta mahsulot:** 4 kategoriya, qidiruv, saralash va 12/12/12/3 ko‘rinishida 4 sahifa. Faol filtrni alohida yoki barcha filtrlarni birdan tozalash mumkin. Mahsulot tafsilotlarida o‘quv modeli xususiyatlari yozilgan; suratlar namuna uchun.
+- **39 ta mahsulot, har biriga alohida surat:** 4 kategoriya, qidiruv, saralash va 12/12/12/3 ko‘rinishida 4 sahifa. Faol filtrni alohida yoki barcha filtrlarni birdan tozalash mumkin. Mahsulot tafsilotlarida o‘quv modeli xususiyatlari yozilgan; suratlar namuna uchun.
 - **Kunduzgi, tungi va tizimga mos rejim:** yuqori paneldagi **Rang rejimi** orqali tanlanadi. Tanlov shu brauzerda saqlanadi; “Tizimga mos” operatsion tizim rang rejimini kuzatadi.
 - **Keyingi qadam:** bosh sahifa joriy yozuvlaringizga qarab ishni qayerdan davom ettirishni ko‘rsatadi. “Mashqning 5 bosqichi” butun jarayonni qisqa tushuntiradi.
 - **Talabdan hujjatga:** talab kartasidagi **Checklist yozish** yoki **Test-case yozish** bog‘langan talab bilan bo‘sh tahrir formasini ochadi. Yozuv faqat **Saqlash** bosilganda yaratiladi.
+- **Katta mashqlar:** hujjatlar va baholash tafsilotlari 50 tadan sahifalanadi. Qidiruv va filtr barcha yozuvlardan izlaydi; eksport faqat ochiq sahifani emas, barcha tegishli yozuvlarni saqlaydi.
 
-Oldingi 9 yoki 36 mahsulotli mashq o‘z holicha saqlanadi. Kengaygan katalog bilan ishlash uchun **Yangi mashq** oching; eski ishlaringiz **Mashqlar tarixi** bo‘limida qoladi.
+Har bir mahsulot surati barqaror ID bilan bog‘langan; bir xil kategoriya surati qayta-qayta takrorlanmaydi. Oldingi 9 yoki 36 mahsulotli mashq o‘z holicha saqlanadi. Kengaygan katalog bilan ishlash uchun **Yangi mashq** oching; eski ishlaringiz **Mashqlar tarixi** bo‘limida qoladi.
 
 ## Avtomatik baholash
 
@@ -19,11 +20,13 @@ Oldingi 9 yoki 36 mahsulotli mashq o‘z holicha saqlanadi. Kengaygan katalog bi
 
 Baholovchi joriy build uchun 14 ta nazorat sinovini yangi, ajratilgan test ma’lumotlarida bajaradi. Sizning savatingiz va buyurtmalaringiz o‘zgarmaydi. U shunchaki mashqda tanlangan bug ID’larini sanab natija yasamaydi: qidiruv, savat, kupon, login va buyurtma funksiyalari ishga tushiriladi.
 
-| Qism | Ball | Mezon |
-|---|---:|---|
-| Holatlar mosligi | 60 | Bajarilishi mumkin bo‘lgan aniq mezonlardan nechta to‘g‘ri belgilangan. Takroriy yozuv qo‘shimcha ball bermaydi; zid belgilangan mezon hisoblanmaydi. |
-| Report va xatoli mezon mosligi | 25 | Joriy build’da xato bergan mezonlarga to‘liq, faol report bog‘langanligi. Tanlangan mezonda tasdiqlanmagan yoki bog‘lanmagan da’volar ballni kamaytiradi. |
-| Report maydonlari to‘liqligi | 15 | Sarlavha, qadamlar, kutilgan/haqiqiy natija, muhit, talab va avto mezonning yozilganligi. Takroriy reportlar bu ballni oshirmaydi. |
+| Qism                           | Ball | Mezon                                                                                                                                                     |
+| ------------------------------ | ---: | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Holatlar mosligi               |   60 | Bajarilishi mumkin bo‘lgan aniq mezonlardan nechta to‘g‘ri belgilangan. Takroriy yozuv qo‘shimcha ball bermaydi; zid belgilangan mezon hisoblanmaydi.     |
+| Report va xatoli mezon mosligi |   25 | Joriy build’da xato bergan mezonlarga to‘liq, faol report bog‘langanligi. Tanlangan mezonda tasdiqlanmagan yoki bog‘lanmagan da’volar ballni kamaytiradi. |
+| Report maydonlari to‘liqligi   |   15 | Sarlavha, qadamlar, kutilgan/haqiqiy natija, muhit, talab va avto mezonning yozilganligi. Takroriy reportlar bu ballni oshirmaydi.                        |
+
+Xatosiz build’da report talab qilinmaydi. Report yo‘qligi uchun ajratilgan 40 ball to‘g‘ri bajarilgan mezonlar ulushiga beriladi: 7/14 to‘g‘ri va faol report yo‘q bo‘lsa — 50/100; bitta noto‘g‘ri javobning o‘zi — 0/100. Baholash qoidasi yangilansa, eski urinish saqlanadi va qayta topshirish eslatiladi.
 
 **Ball qoidalarga asoslangan o‘quv bahosi.** Reportdagi matn va screenshot mazmunining rostligi yoki sifatini tasdiqlamaydi. Masalan, noto‘g‘ri ma’no yozilgan bo‘lsa ham, to‘ldirilgan maydon “to‘liq” deb sanalishi mumkin. AI va tashqi xizmat ulanmagan; hujjatlar brauzerdan yuborilmaydi. UI ko‘rinishi, tarmoq tezligi, to‘lov va barcha mumkin bo‘lgan chegara holatlari ushbu 14 mezon bilan to‘liq qamralmaydi.
 
@@ -49,6 +52,8 @@ npm run preview
 
 `dist/` — joylashtirishga tayyor statik sayt. `npm test` avtomatik mantiqiy testlarni, `npm run test:e2e` esa Playwright brauzer testlarini ishga tushiradi. Brauzer testlari tizimdagi `/usr/bin/chromium` yoki `CHROMIUM_PATH` dan foydalanadi. Ular bo‘lmasa, `npx playwright install chromium` bilan Playwright brauzerini o‘rnating.
 
+Firefox va WebKit uchun tegishli brauzerni `npx playwright install --with-deps firefox webkit` orqali o‘rnating, so‘ng `QA_BROWSER=firefox npm run test:e2e` yoki `QA_BROWSER=webkit npm run test:e2e` buyrug‘ini bajaring. GitHub Actions har push va pull request’da mantiqiy testlar, build va Chromium sinovlarini avtomatik bajaradi.
+
 ## Vercel’ga joylashtirish
 
 1. Loyihani GitHub, GitLab yoki Bitbucket repozitoriyiga yuklang. `node_modules/` va shaxsiy mashq eksportlarini yuklamang.
@@ -71,7 +76,7 @@ Ilova uchun API kaliti, ma’lumotlar bazasi yoki server muhiti o‘zgaruvchilar
 7. **Mashqni topshiring.** “Natija va retest” bo‘limida avtomatik baho oling. Aniq mezonga bog‘lanmagan yozuvlar qo‘lda tekshirish uchun qoladi. Javoblarni baholashsiz ham ochish mumkin; undan keyingi topshirish mustaqil urinish hisoblanmaydi.
 8. **Fix va retest bajaring.** Tuzatilgan holatda avval xato bergan qadamlarni qayta bajaring. Yaqin funksiyalarni ham tekshiring — bu regression tekshiruvi.
 9. **Test yakuni hisobotini yozing.** “Natija va retest” bo‘limida qamrov, risk va release qarorini yozib, Markdown hisobotini yuklang.
-10. **Natijani saqlang va eksport qiling.** QA tahrir formasidagi **Saqlash** tugmasini bosing; keyin yozuv avtomatik brauzerga saqlanadi. Yangi mashqqa o‘tish oldingi saqlangan ishni tarixda qoldiradi. Saqlanmagan ochiq forma qoralamasi sahifadan ketganda saqlanmaydi.
+10. **Natijani saqlang va eksport qiling.** QA tahrir formasidagi **Saqlash** tugmasini bosing; keyin yozuv avtomatik brauzerga saqlanadi. Yangi mashqqa o‘tish oldingi saqlangan ishni tarixda qoldiradi. Ochiq forma qoralamasi shu brauzer oynasida sahifalar orasida yurish va qayta yuklash uchun tiklanadi. Baho va JSON zaxiraga kirishi uchun baribir **Saqlash**ni bosing; oyna yopilganda qoralama yo‘qolishi mumkin.
 
 Namuna bug-report:
 
@@ -102,7 +107,13 @@ Bu yozish usuli namunasi; har mashqda aynan shu xato bo‘lishi shart emas.
 
 Mashqlar **brauzerning IndexedDB xotirasida** saqlanadi. Bulut akkaunti va qurilmalararo avtomatik sinxronlash yo‘q. Boshqa brauzer, boshqa profil yoki boshqa sayt manzili alohida xotiraga ega. Vercel preview manzilidagi ish asosiy domeningizga avtomatik ko‘chmaydi.
 
-Sayt ma’lumotlarini tozalash, maxfiy rejimdan chiqish yoki brauzer xotirasining o‘chirilishi ishni yo‘qotishi mumkin. Muhim mashqlarni **JSON eksport** qilib saqlang. Eksport mashq ma’lumotlari va ilova qilingan rasm dalillarini ham olib chiqadi. **JSON import** orqali mos QA Lab eksportini qayta tiklashingiz mumkin. Import yangi ID’li mashqlarni tarixga qo‘shadi; bir xil ID’li mavjud mashqlarni o‘tkazib yuboradi va ularning ishini almashtirmaydi. Katta rasmlar zaxira faylini kattalashtiradi; hisobot uchun faqat kerakli qismini suratga oling.
+Sayt ma’lumotlarini tozalash, maxfiy rejimdan chiqish yoki brauzer xotirasining o‘chirilishi ishni yo‘qotishi mumkin. Muhim mashqlarni **JSON eksport** qilib saqlang. Eksport mashq ma’lumotlari va ilova qilingan rasm dalillarini ham olib chiqadi. **JSON import** orqali mos QA Lab eksportini qayta tiklashingiz mumkin. Import yangi ID’li mashqlarni tarixga qo‘shadi; bir xil ID’li mavjud mashqlarni o‘tkazib yuboradi va ularning ishini almashtirmaydi. **JSON nusxa sifatida** esa barcha import mashqlarini yangi ID bilan alohida qo‘shadi — masalan, to‘qnashuvda yuklangan mahalliy ishni tiklash uchun. Hujjatlar, dalillar va baholash tarixi nusxada saqlanadi; joriy mashq o‘zgarmaydi.
+
+50 MB dan katta zaxirada davom ettirish oynasi chiqadi: import ko‘proq xotira va vaqt olishi mumkin. **Bekor qilish** hech narsani o‘zgartirmaydi; **Importni davom ettirish** faylni o‘qib tekshiradi. Import tugagach qo‘shilgan va o‘tkazib yuborilgan mashqlar soni ko‘rsatiladi. Katta rasmlar zaxira faylini kattalashtiradi; hisobot uchun faqat kerakli qismini suratga oling.
+
+Ikki oynada ishlaganda eskirgan oyna yangi saqlangan ma’lumot ustiga yozmaydi. To‘qnashuv chiqsa, **Nusxamni yuklab, yangi ishni ochish** joriy oynadagi ishni JSON faylga olib, eng yangi saqlangan nusxani ochadi. Ikki nusxadagi farqlar avtomatik birlashtirilmaydi. Saqlash vaqtincha ishlamasa, **Saqlashni qayta urinish** orqali davom etish mumkin.
+
+Yozish vaqtida saqlash qisqa tanaffusni kutadi; yuqori paneldagi holat ish haqiqatan saqlanganini bildiradi. Boshqa nusxada hujjat o‘zgargan yoki o‘chirilgan bo‘lsa, eski forma qoralamasi alohida saqlanmagan nusxa sifatida tiklanadi. Uni saqlash yangi yozuv yaratadi va mavjud hujjatni almashtirmaydi.
 
 Eksportdagi yozuv va rasmlar shaxsiy ma’lumotlarni o‘z ichiga olishi mumkin; uni ulashishdan oldin tekshiring. Demo formalariga haqiqiy parol yoki karta ma’lumotlarini kiritish kerak emas.
 

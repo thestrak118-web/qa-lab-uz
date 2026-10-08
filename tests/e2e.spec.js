@@ -258,7 +258,7 @@ test("invalid backups cannot replace or damage current work; valid backup can be
     mimeType: "application/json",
     buffer: Buffer.from('{"version":1,"sessions":[]}'),
   });
-  await expect(page.getByRole("status")).toContainText(
+  await expect(page.getByRole("alert")).toContainText(
     "zaxira formatiga mos emas",
   );
   expect(await stored(page)).toEqual(before);
@@ -267,7 +267,7 @@ test("invalid backups cannot replace or damage current work; valid backup can be
     mimeType: "application/json",
     buffer: Buffer.from("{ invalid json"),
   });
-  await expect(page.getByRole("status")).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("JSON fayli buzilgan");
   expect(await stored(page)).toEqual(before);
   // Reimporting an already-present valid backup must not duplicate sessions.
   await input.setInputFiles({

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -26,6 +26,8 @@ import {
   money,
   simulateApi,
 } from "../lib/scenario.js";
+import { productPhoto } from "../lib/productImages.js";
+import { useDialogFocus } from "../lib/useDialogFocus.js";
 import "../shop.css";
 
 const CATALOG_PAGE_SIZE = 12;
@@ -37,12 +39,14 @@ const SORT_LABELS = {
 };
 
 function ProductArt({ product, small = false }) {
+  const photo = productPhoto(product);
   return (
     <div
       className={`shop-art shop-art-${product.icon}${small ? " shop-art-small" : ""}`}
     >
       <img
-        src={`/products/${product.icon}.jpg`}
+        src={photo.src}
+        style={{ objectPosition: photo.position }}
         alt={`${product.name} — namuna surati`}
         width="720"
         height="720"
@@ -70,6 +74,11 @@ export default function Shop({ session, onUpdate }) {
   const state = { ...initialProductState(scenario), ...session.productState };
   const fixed = session.fixedBugIds || [];
   const totals = calculateCart(scenario, state, fixed);
+  const couponFeedback = state.coupon
+    ? totals.coupon.valid
+      ? `${totals.coupon.percent}% chegirma qo‘llandi.`
+      : totals.coupon.error
+    : state.couponMessage;
   const products = filterProducts(scenario, state, fixed);
   // Pagination is presentation state; the saved exercise and seeded defects
   // continue to own filtering, sorting, cart and order behavior.
@@ -170,33 +179,10 @@ export default function Shop({ session, onUpdate }) {
       [group]: { ...previous[group], [key]: value },
       errors: { ...previous.errors, [key]: null },
     }));
-  useEffect(() => {
-    if (!state.selectedProduct) return undefined;
-    const close = (e) => {
-      if (e.key === "Escape")
-        onUpdate((current) => ({
-          productState: { ...current.productState, selectedProduct: null },
-        }));
-      if (e.key === "Tab") {
-        const controls = [
-          ...document.querySelectorAll(
-            ".shop-product-modal button:not(:disabled), .shop-product-modal input, .shop-product-modal a[href]",
-          ),
-        ];
-        const first = controls[0],
-          last = controls.at(-1);
-        if (first && e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (last && !e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-    };
-    window.addEventListener("keydown", close);
-    return () => window.removeEventListener("keydown", close);
-  }, [state.selectedProduct, onUpdate]);
+  const modalRef = useRef(null);
+  useDialogFocus(modalRef, Boolean(selected), () =>
+    patch({ selectedProduct: null }),
+  );
 
   const orderSummary = (checkout = false) => (
     <aside className="shop-summary">
@@ -717,9 +703,7 @@ export default function Shop({ session, onUpdate }) {
                       Qo‘llash
                     </button>
                   </div>
-                  {state.couponMessage && (
-                    <p role="status">{state.couponMessage}</p>
-                  )}
+                  {couponFeedback && <p role="status">{couponFeedback}</p>}
                   {state.coupon && (
                     <button
                       type="button"
@@ -729,6 +713,7 @@ export default function Shop({ session, onUpdate }) {
                           coupon: null,
                           couponMessage: "",
                           couponInput: "",
+                          notice: "Kupon olib tashlandi.",
                         })
                       }
                     >
@@ -1111,6 +1096,7 @@ export default function Shop({ session, onUpdate }) {
           onClick={() => patch({ selectedProduct: null })}
         >
           <section
+            ref={modalRef}
             className="shop-product-modal"
             role="dialog"
             aria-modal="true"
@@ -1119,7 +1105,6 @@ export default function Shop({ session, onUpdate }) {
           >
             <button
               className="shop-modal-close"
-              autoFocus
               aria-label="Mahsulot oynasini yopish"
               onClick={() => patch({ selectedProduct: null })}
             >

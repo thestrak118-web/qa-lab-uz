@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
   CircleHelp,
@@ -8,6 +8,9 @@ import {
   X,
 } from "lucide-react";
 import "../assessment.css";
+
+const PAGE_SIZE = 50;
+const EMPTY_ATTEMPTS = [];
 
 const STATUS_LABELS = {
   "Not run": "Tekshirilmagan",
@@ -38,6 +41,30 @@ const readable = (value) => {
   return typeof value === "string" ? value : JSON.stringify(value);
 };
 
+function conflictingCheckIds(attempt) {
+  return new Set(
+    attempt.checks
+      .filter(
+        (check) =>
+          new Set(
+            attempt.comparisons
+              .filter(
+                (row) =>
+                  row.checkId === check.id &&
+                  ["correct", "wrong"].includes(row.verdict),
+              )
+              .map((row) => row.claimedStatus),
+          ).size > 1,
+      )
+      .map((check) => check.id),
+  );
+}
+
+const isConflictingClaim = (item, conflicting) =>
+  ["correct", "wrong"].includes(item.verdict) && conflicting.has(item.checkId);
+const CONFLICT_DETAIL =
+  "Shu mezonga boshqa yozuvda qarama-qarshi holat qo‘yilgan. Barcha natijalarni tekshirib, ziddiyatni tuzating.";
+
 function Verdict({ value, label }) {
   const Icon = value === "correct" ? Check : value === "wrong" ? X : CircleHelp;
   return (
@@ -51,15 +78,26 @@ function Verdict({ value, label }) {
 }
 
 export default function Assessment({ session, onSubmit, isStale = false }) {
-  const attempts = session.assessments || [];
+  const attempts = session.assessments || EMPTY_ATTEMPTS;
   const latest = attempts.at(-1);
   const [selectedId, setSelectedId] = useState(null);
+  const [historyPage, setHistoryPage] = useState(1);
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const confirmRef = useRef(null);
   const actionRef = useRef(null);
+  const historyRef = useRef(null);
+  const restoreFocus = useRef(false);
   const attempt = attempts.find((item) => item.id === selectedId) || latest;
+  const history = useMemo(() => [...attempts].reverse(), [attempts]);
+  const historyPageCount = Math.max(1, Math.ceil(history.length / PAGE_SIZE));
+  const historyCurrentPage = Math.min(historyPage, historyPageCount);
+  const historyStart = (historyCurrentPage - 1) * PAGE_SIZE;
+  const showLatest = useCallback(() => {
+    setSelectedId(null);
+    actionRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     setSelectedId(null);
@@ -68,10 +106,18 @@ export default function Assessment({ session, onSubmit, isStale = false }) {
   }, [session.id]);
   useEffect(() => {
     setSelectedId(null);
+    setHistoryPage(1);
   }, [latest?.id]);
   useEffect(() => {
-    if (confirming) confirmRef.current?.focus();
-  }, [confirming]);
+    if (confirming) {
+      restoreFocus.current = true;
+      confirmRef.current?.focus();
+    } else if (!submitting && restoreFocus.current) {
+      // Restore only after React has enabled the trigger again.
+      actionRef.current?.focus();
+      restoreFocus.current = false;
+    }
+  }, [confirming, submitting]);
 
   async function submit() {
     setSubmitting(true);
@@ -80,7 +126,6 @@ export default function Assessment({ session, onSubmit, isStale = false }) {
       await onSubmit();
       setConfirming(false);
       setSelectedId(null);
-      actionRef.current?.focus();
     } catch {
       setError(
         "Baholash saqlanmadi. Qayta urinib ko‘ring; yozgan ishlaringiz o‘chirilmaydi.",
@@ -104,7 +149,10 @@ export default function Assessment({ session, onSubmit, isStale = false }) {
         <button
           ref={actionRef}
           className="btn btn-primary"
-          onClick={() => setConfirming(true)}
+          onClick={() => {
+            setError("");
+            setConfirming(true);
+          }}
           disabled={confirming || submitting}
         >
           <Send size={15} aria-hidden="true" />{" "}
@@ -141,7 +189,6 @@ export default function Assessment({ session, onSubmit, isStale = false }) {
                 disabled={submitting}
                 onClick={() => {
                   setConfirming(false);
-                  actionRef.current?.focus();
                 }}
               >
                 Hali tayyor emasman
@@ -158,35 +205,54 @@ export default function Assessment({ session, onSubmit, isStale = false }) {
           <AssessmentIntro />
         ) : (
           <AttemptResult
+            key={attempt.id}
             attempt={attempt}
             isStale={isStale && attempt.id === latest?.id}
+            historical={attempt.id !== latest?.id}
+            onLatest={showLatest}
           />
         )}
         {attempts.length > 0 && (
-          <details className="assessment-disclosure">
+          <details className="assessment-disclosure" ref={historyRef}>
             <summary>
               Urinishlar tarixi <small>{attempts.length} ta</small>
             </summary>
             <div className="assessment-history">
-              {[...attempts].reverse().map((item, index) => (
-                <button
-                  key={item.id}
-                  onClick={() => setSelectedId(item.id)}
-                  aria-pressed={attempt?.id === item.id}
-                >
-                  <strong>
-                    {attempts.length - index}-urinish · {item.score}/100
-                  </strong>
-                  <small>{dateLabel(item.createdAt)}</small>
-                  <small>
-                    Build {item.build.label}
-                    {item.mode === "practice"
-                      ? " · Javoblar ochilgan"
-                      : " · Mustaqil"}
-                  </small>
-                </button>
-              ))}
+              {history
+                .slice(historyStart, historyStart + PAGE_SIZE)
+                .map((item, index) => (
+                  <button
+                    key={item.id}
+                    onClick={() => setSelectedId(item.id)}
+                    aria-pressed={attempt?.id === item.id}
+                  >
+                    <strong>
+                      {attempts.length - historyStart - index}-urinish ·{" "}
+                      {item.score}/100
+                    </strong>
+                    <small>{dateLabel(item.createdAt)}</small>
+                    <small>
+                      Build {item.build.label}
+                      {item.mode === "practice"
+                        ? " · Javoblar ochilgan"
+                        : " · Mustaqil"}
+                    </small>
+                  </button>
+                ))}
             </div>
+            <AssessmentPager
+              label="Urinishlar tarixi sahifalari"
+              page={historyCurrentPage}
+              count={historyPageCount}
+              total={history.length}
+              onChange={(page) => {
+                setHistoryPage(page);
+                historyRef.current
+                  ?.querySelector("summary")
+                  ?.focus({ preventScroll: true });
+                historyRef.current?.scrollIntoView({ block: "start" });
+              }}
+            />
           </details>
         )}
         <p className="assessment-note assessment-limits">
@@ -212,7 +278,8 @@ function AssessmentIntro() {
         <strong>Xatolarni qayd qilish · 25 ball</strong>
         <p>
           Xato chiqqan mezonga bog‘langan to‘liq reportlar hisoblanadi. Xatosiz
-          mezonga yozilgan report bahoni pasaytiradi.
+          mezonga yozilgan report bahoni pasaytiradi. Xatosiz build’da ball
+          to‘g‘ri bajarilgan mezonlar ulushiga beriladi.
         </p>
       </div>
       <div>
@@ -227,6 +294,7 @@ function AssessmentIntro() {
 }
 
 function exportAttempt(attempt) {
+  const conflicting = conflictingCheckIds(attempt);
   const lines = [
     "# QA Lab — avtomatik baholash",
     "",
@@ -244,13 +312,13 @@ function exportAttempt(attempt) {
     "## Sizning tekshiruvlaringiz",
     ...attempt.comparisons.map(
       (item) =>
-        `- ${item.title} (${item.checkId || "Mezon tanlanmagan"}): ${STATUS_LABELS[item.claimedStatus] || item.claimedStatus}. ${VERDICT_LABELS[item.verdict] || item.verdict}. ${item.detail}`,
+        `- ${item.title} (${item.checkId || "Mezon tanlanmagan"}): ${STATUS_LABELS[item.claimedStatus] || item.claimedStatus}. ${isConflictingClaim(item, conflicting) ? "Zid holatlar — ball yo‘q" : VERDICT_LABELS[item.verdict] || item.verdict}. ${isConflictingClaim(item, conflicting) ? CONFLICT_DETAIL : item.detail}`,
     ),
     "",
     "## Reportlar",
     ...attempt.reports.map(
       (item) =>
-        `- ${item.title}: ${item.detail}${item.missing.length ? ` Yetishmaydi: ${item.missing.join(", ")}.` : ""}`,
+        `- ${item.title} (${item.checkId || "Mezon tanlanmagan"}): ${item.detail}${item.missing.length ? ` Yetishmaydi: ${item.missing.join(", ")}.` : ""}`,
     ),
     "",
     "## Nazorat testlari",
@@ -275,18 +343,49 @@ function exportAttempt(attempt) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function AttemptResult({ attempt, isStale }) {
+const AttemptResult = memo(function AttemptResult({
+  attempt,
+  isStale,
+  historical,
+  onLatest,
+}) {
   const [filter, setFilter] = useState("all");
-  useEffect(() => setFilter("all"), [attempt.id]);
-  const visibleComparisons = attempt.comparisons.filter(
-    (item) =>
-      filter === "all" ||
-      (filter === "attention"
-        ? item.verdict !== "correct"
-        : item.verdict === filter),
+  const [comparisonPage, setComparisonPage] = useState(1);
+  const [reportPage, setReportPage] = useState(1);
+  const comparisonsRef = useRef(null);
+  const reportsRef = useRef(null);
+  const conflicting = useMemo(() => conflictingCheckIds(attempt), [attempt]);
+  const visibleComparisons = useMemo(
+    () =>
+      attempt.comparisons.filter(
+        (item) =>
+          filter === "all" ||
+          (filter === "attention"
+            ? item.verdict !== "correct" ||
+              isConflictingClaim(item, conflicting)
+            : item.verdict === filter &&
+              !isConflictingClaim(item, conflicting)),
+      ),
+    [attempt.comparisons, filter, conflicting],
   );
-  const missed = attempt.checks.filter((check) =>
-    attempt.missedCheckIds.includes(check.id),
+  const comparisonPageCount = Math.max(
+    1,
+    Math.ceil(visibleComparisons.length / PAGE_SIZE),
+  );
+  const comparisonCurrentPage = Math.min(comparisonPage, comparisonPageCount);
+  const comparisonStart = (comparisonCurrentPage - 1) * PAGE_SIZE;
+  const reportPageCount = Math.max(
+    1,
+    Math.ceil(attempt.reports.length / PAGE_SIZE),
+  );
+  const reportCurrentPage = Math.min(reportPage, reportPageCount);
+  const reportStart = (reportCurrentPage - 1) * PAGE_SIZE;
+  const missed = useMemo(
+    () =>
+      attempt.checks.filter((check) =>
+        attempt.missedCheckIds.includes(check.id),
+      ),
+    [attempt],
   );
   const reportLabels = {
     matched: "Mezon va maydonlar mos",
@@ -310,11 +409,21 @@ function AttemptResult({ attempt, isStale }) {
   };
   return (
     <div className="assessment-result">
+      {historical && (
+        <div className="assessment-notice assessment-archive" role="status">
+          <span>
+            Arxivdagi urinish ko‘rsatilmoqda. Bu eng oxirgi baho emas.
+          </span>
+          <button className="btn btn-secondary" onClick={onLatest}>
+            Oxirgi bahoni ko‘rish
+          </button>
+        </div>
+      )}
       {isStale && (
         <p className="assessment-notice" role="status">
-          Bu bahodan keyin ishlaringiz yoki build o‘zgargan. Quyida topshirilgan
-          paytdagi natija turibdi. Hozirgi ishni baholash uchun qayta
-          topshiring.
+          Bu bahodan keyin ishlaringiz, build yoki baholash qoidalari o‘zgargan.
+          Quyida topshirilgan paytdagi natija turibdi. Hozirgi ishni baholash
+          uchun qayta topshiring.
         </p>
       )}
       <div className="assessment-meta">
@@ -393,7 +502,7 @@ function AttemptResult({ attempt, isStale }) {
           faqat talabni tanlash yetarli emas.
         </p>
       )}
-      <details className="assessment-disclosure" open>
+      <details className="assessment-disclosure" open ref={comparisonsRef}>
         <summary>
           Belgilagan natijalaringiz{" "}
           <small>{attempt.comparisons.length} ta yozuv</small>
@@ -412,7 +521,10 @@ function AttemptResult({ attempt, isStale }) {
                 <button
                   key={value}
                   aria-pressed={filter === value}
-                  onClick={() => setFilter(value)}
+                  onClick={() => {
+                    setFilter(value);
+                    setComparisonPage(1);
+                  }}
                 >
                   {label}
                 </button>
@@ -437,46 +549,71 @@ function AttemptResult({ attempt, isStale }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {visibleComparisons.map((item) => (
-                      <tr key={`${item.kind}-${item.id}`}>
-                        <td>
-                          {item.title}
-                          <small>
-                            {item.kind === "checklist"
-                              ? "Checklist"
-                              : "Test-case"}{" "}
-                            · {item.checkId || "Mezon tanlanmagan"}
-                          </small>
-                        </td>
-                        <td>
-                          {STATUS_LABELS[item.claimedStatus] ||
-                            item.claimedStatus}
-                        </td>
-                        <td>
-                          {STATUS_LABELS[item.expectedStatus] ||
-                            (item.expectedStatus === "Unavailable"
-                              ? "Tekshirib bo‘lmadi"
-                              : "—")}
-                        </td>
-                        <td>
-                          <Verdict
-                            value={item.verdict}
-                            label={
-                              item.verdict === "unmarked"
-                                ? STATUS_LABELS[item.claimedStatus]
-                                : undefined
-                            }
-                          />
-                          <p>{item.detail}</p>
-                        </td>
-                      </tr>
-                    ))}
+                    {visibleComparisons
+                      .slice(comparisonStart, comparisonStart + PAGE_SIZE)
+                      .map((item) => (
+                        <tr key={`${item.kind}-${item.id}`}>
+                          <td>
+                            {item.title}
+                            <small>
+                              {item.kind === "checklist"
+                                ? "Checklist"
+                                : "Test-case"}{" "}
+                              · {item.checkId || "Mezon tanlanmagan"}
+                            </small>
+                          </td>
+                          <td>
+                            {STATUS_LABELS[item.claimedStatus] ||
+                              item.claimedStatus}
+                          </td>
+                          <td>
+                            {STATUS_LABELS[item.expectedStatus] ||
+                              (item.expectedStatus === "Unavailable"
+                                ? "Tekshirib bo‘lmadi"
+                                : "—")}
+                          </td>
+                          <td>
+                            <Verdict
+                              value={
+                                isConflictingClaim(item, conflicting)
+                                  ? "ungraded"
+                                  : item.verdict
+                              }
+                              label={
+                                isConflictingClaim(item, conflicting)
+                                  ? "Zid holatlar — ball yo‘q"
+                                  : item.verdict === "unmarked"
+                                    ? STATUS_LABELS[item.claimedStatus]
+                                    : undefined
+                              }
+                            />
+                            <p>
+                              {isConflictingClaim(item, conflicting)
+                                ? CONFLICT_DETAIL
+                                : item.detail}
+                            </p>
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               </div>
             ) : (
               <p className="assessment-empty">Bu filtrga mos yozuv yo‘q.</p>
             )}
+            <AssessmentPager
+              label="Baholash natijalari sahifalari"
+              page={comparisonCurrentPage}
+              count={comparisonPageCount}
+              total={visibleComparisons.length}
+              onChange={(page) => {
+                setComparisonPage(page);
+                comparisonsRef.current
+                  ?.querySelector("summary")
+                  ?.focus({ preventScroll: true });
+                comparisonsRef.current?.scrollIntoView({ block: "start" });
+              }}
+            />
           </>
         ) : (
           <p className="assessment-empty">
@@ -485,7 +622,7 @@ function AttemptResult({ attempt, isStale }) {
           </p>
         )}
       </details>
-      <details className="assessment-disclosure">
+      <details className="assessment-disclosure" ref={reportsRef}>
         <summary>
           Reportlar bo‘yicha izoh{" "}
           <small>
@@ -499,41 +636,56 @@ function AttemptResult({ attempt, isStale }) {
         </p>
         {attempt.reports.length ? (
           <div className="assessment-report-list">
-            {attempt.reports.map((report) => (
-              <article className="assessment-report" key={report.id}>
-                <div className="assessment-report-heading">
-                  <h4>{report.title || "Nomsiz report"}</h4>
-                  <Verdict
-                    value={
-                      report.verdict === "matched"
-                        ? "correct"
-                        : report.verdict === "not-failing"
-                          ? "wrong"
-                          : "ungraded"
-                    }
-                    label={reportLabels[report.verdict]}
-                  />
-                </div>
-                <p>
-                  {report.checkId || "Mezon tanlanmagan"} · {report.detail}
-                </p>
-                {report.missing.length > 0 && (
-                  <p className="assessment-note">
-                    Yetishmaydi:{" "}
-                    {report.missing
-                      .map((field) => fieldLabels[field] || field)
-                      .join(", ")}
-                    .
+            {attempt.reports
+              .slice(reportStart, reportStart + PAGE_SIZE)
+              .map((report) => (
+                <article className="assessment-report" key={report.id}>
+                  <div className="assessment-report-heading">
+                    <h4>{report.title || "Nomsiz report"}</h4>
+                    <Verdict
+                      value={
+                        report.verdict === "matched"
+                          ? "correct"
+                          : report.verdict === "not-failing"
+                            ? "wrong"
+                            : "ungraded"
+                      }
+                      label={reportLabels[report.verdict]}
+                    />
+                  </div>
+                  <p>
+                    {report.checkId || "Mezon tanlanmagan"} · {report.detail}
                   </p>
-                )}
-              </article>
-            ))}
+                  {report.missing.length > 0 && (
+                    <p className="assessment-note">
+                      Yetishmaydi:{" "}
+                      {report.missing
+                        .map((field) => fieldLabels[field] || field)
+                        .join(", ")}
+                      .
+                    </p>
+                  )}
+                </article>
+              ))}
           </div>
         ) : (
           <p className="assessment-empty">
             Topshirish vaqtida report yozilmagan.
           </p>
         )}
+        <AssessmentPager
+          label="Report izohlari sahifalari"
+          page={reportCurrentPage}
+          count={reportPageCount}
+          total={attempt.reports.length}
+          onChange={(page) => {
+            setReportPage(page);
+            reportsRef.current
+              ?.querySelector("summary")
+              ?.focus({ preventScroll: true });
+            reportsRef.current?.scrollIntoView({ block: "start" });
+          }}
+        />
         {missed.length > 0 && (
           <div className="assessment-missed">
             <h4>To‘liq report bilan qayd qilinmagan xatolar</h4>
@@ -616,5 +768,47 @@ function AttemptResult({ attempt, isStale }) {
         )}
       </details>
     </div>
+  );
+});
+
+function AssessmentPager({ label, page, count, total, onChange }) {
+  if (count <= 1) return null;
+  return (
+    <nav className="assessment-pager" aria-label={label}>
+      <span role="status" aria-live="polite">
+        {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} /{" "}
+        {total} yozuv · {page}/{count}-sahifa
+      </span>
+      <div>
+        <button
+          className="btn btn-secondary"
+          disabled={page === 1}
+          onClick={() => onChange(1)}
+        >
+          Birinchi
+        </button>
+        <button
+          className="btn btn-secondary"
+          disabled={page === 1}
+          onClick={() => onChange(page - 1)}
+        >
+          Oldingi
+        </button>
+        <button
+          className="btn btn-secondary"
+          disabled={page === count}
+          onClick={() => onChange(page + 1)}
+        >
+          Keyingi
+        </button>
+        <button
+          className="btn btn-secondary"
+          disabled={page === count}
+          onClick={() => onChange(count)}
+        >
+          Oxirgi
+        </button>
+      </div>
+    </nav>
   );
 }

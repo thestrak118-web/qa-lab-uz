@@ -36,7 +36,8 @@ test("API requests share the shop session and reject malformed checkout state", 
   await page
     .getByRole("button", { name: "API laboratoriya", exact: true })
     .click();
-  await page.getByLabel("Request body (JSON)", { exact: true }).fill("");
+  // The API editor now restores its unfinished request across navigation.
+  await page.getByRole("button", { name: "Mahsulotlar", exact: true }).click();
   await page.getByRole("button", { name: "Yuborish", exact: true }).click();
   await expect(page.locator(".response-head .badge")).toHaveText("200");
 });

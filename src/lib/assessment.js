@@ -1,11 +1,22 @@
 import { runChecks } from "./checks.js";
-
-const isSample = (item) => /\[namuna\]/iu.test(item.title || "");
+import { isSampleDocument } from "./practice.js";
+const emptyEnvironmentTemplate = (value) =>
+  value
+    .replace(/\s/g, "")
+    .replaceAll("…", "...")
+    .replace(/[‘’ʻʼ']/g, "'")
+    .toLowerCase() === "brauzer:.../os:.../ekrano'lchami:...";
 const filled = (value) =>
   Array.isArray(value)
-    ? value.some((line) => String(line).trim())
-    : typeof value === "string" && value.trim().length > 0;
+    ? value.some(filled)
+    : typeof value === "string" &&
+      value.trim().length > 0 &&
+      !emptyEnvironmentTemplate(value);
 const rounded = (value) => Math.round(value * 10) / 10;
+
+// Increment when grading rules change so saved scores invite a fresh submission.
+// This is independent from the assessment snapshot's storage schema version.
+const GRADING_REVISION = 2;
 
 /** Change detector, not a cryptographic signature or a certification mechanism. */
 export function assessmentFingerprint(session) {
@@ -15,7 +26,7 @@ export function assessmentFingerprint(session) {
       evidence: evidence?.map(({ id, name, type }) => ({ id, name, type })),
     }));
   const input = JSON.stringify({
-    version: 1,
+    version: GRADING_REVISION,
     scenario: session.scenario,
     fixedBugIds: [...session.fixedBugIds].sort(),
     checklist: docs(session.checklist),
@@ -25,7 +36,7 @@ export function assessmentFingerprint(session) {
   let hash = 2166136261;
   for (let i = 0; i < input.length; i++)
     hash = Math.imul(hash ^ input.charCodeAt(i), 16777619);
-  return `grade-v1-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return `grade-v${GRADING_REVISION}-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 /** Grade explicit, concrete claims. Free text is checked for presence, not truth. */
@@ -45,7 +56,7 @@ export function createAssessment(session, options = {}) {
         claimedStatus: item.status,
         expectedStatus: check?.status || null,
       };
-      if (isSample(item))
+      if (isSampleDocument(item))
         return {
           ...row,
           verdict: "sample",
@@ -123,7 +134,7 @@ export function createAssessment(session, options = {}) {
       checkId: item.checkId || "",
       missing,
     };
-    if (isSample(item))
+    if (isSampleDocument(item))
       return {
         ...row,
         verdict: "sample",
@@ -160,7 +171,7 @@ export function createAssessment(session, options = {}) {
         ...row,
         verdict: "incomplete",
         detail:
-          "Mezon xatoni ko‘rsatdi, ammo reportning zarur maydonlari to‘liq emas.",
+          "Mezon xatoni ko‘rsatdi, ammo reportning zarur maydonlari to‘liq emas. Bo‘sh maydon yoki o‘zgartirilmagan muhit shablonini to‘ldiring.",
       };
     return {
       ...row,
@@ -185,7 +196,12 @@ export function createAssessment(session, options = {}) {
       ),
   );
   const precision = claims.size ? supported.size / claims.size : 1;
-  const recall = failing.length ? supported.size / failing.length : 1;
+  // An untested clean build is not evidence that no reports were needed.
+  // Credit for the absence of defects grows with correctly completed checks.
+  const verifiedCoverage = available.length ? correct / available.length : 0;
+  const recall = failing.length
+    ? supported.size / failing.length
+    : verifiedCoverage;
   const documentGroups = new Map();
   for (const row of activeReports) {
     const key = row.verdict === "unlinked" ? `unlinked:${row.id}` : row.checkId;
@@ -198,7 +214,7 @@ export function createAssessment(session, options = {}) {
       documentGroups.size
     : failing.length
       ? 0
-      : 1;
+      : verifiedCoverage;
   const hasWork =
     comparisons.some((row) => ["correct", "wrong"].includes(row.verdict)) ||
     activeReports.length > 0;
@@ -215,7 +231,9 @@ export function createAssessment(session, options = {}) {
       label: "Reportlarning mezonga mosligi",
       max: 25,
       score: rounded(available.length && hasWork ? 25 * recall * precision : 0),
-      detail: `${supported.size}/${failing.length} xatoli mezonga to‘liq faol report bog‘langan. Bog‘lanmagan, to‘liq bo‘lmagan yoki bu build’da tasdiqlanmagan da’volar ballni kamaytiradi.`,
+      detail: failing.length
+        ? `${supported.size}/${failing.length} xatoli mezonga to‘liq faol report bog‘langan. Bog‘lanmagan, to‘liq bo‘lmagan yoki bu build’da tasdiqlanmagan da’volar ballni kamaytiradi.`
+        : `Bu build’da xatoli mezon yo‘q. Report yozmaslik uchun ball ${correct}/${available.length} to‘g‘ri bajarilgan mezon ulushiga beriladi; tasdiqlanmagan xato da’volari ballni kamaytiradi.`,
     },
     {
       id: "documentation",
@@ -223,7 +241,9 @@ export function createAssessment(session, options = {}) {
       max: 15,
       score: rounded(available.length && hasWork ? 15 * completeness : 0),
       detail:
-        "7 zarur maydonning to‘ldirilganligi. Yozilgan matnning ma’nosi va dalilning ishonchliligi baholanmaydi.",
+        !activeReports.length && !failing.length
+          ? `Xatosiz build’da report talab qilinmaydi. Ball ${correct}/${available.length} to‘g‘ri bajarilgan mezon ulushiga beriladi.`
+          : "7 zarur maydonning to‘ldirilganligi. Yozilgan matnning ma’nosi va dalilning ishonchliligi baholanmaydi.",
     },
   ];
   return {

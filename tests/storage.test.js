@@ -787,45 +787,147 @@ test("real grader results round-trip for each difficulty, fixed build and unavai
   assert.deepEqual(input, before);
 });
 
-test("assessment snapshots retain every supported non-scored and report verdict", () => {
-  const input = assessedBackup();
-  const a = input.sessions[0].assessments[0];
-  a.checks[0].status = "Unavailable";
-  a.comparisons = [
-    "correct",
-    "wrong",
-    "unmarked",
-    "unlinked",
-    "unavailable",
-    "sample",
-  ].map((verdict, i) => ({
-    id: `historical-case-${i}`,
-    kind: i % 2 ? "cases" : "checklist",
+test("assessment snapshots retain coherent non-scored and report verdicts", () => {
+  const s = session();
+  s.scenario.requirements = s.scenario.requirements.filter(
+    (r) => r.id !== "REQ-07",
+  );
+  s.scenario.bugs = s.scenario.bugs.filter((b) => b.requirementId !== "REQ-07");
+  const checks = runChecks(s.scenario);
+  const passed = checks.find((c) => c.status === "Passed");
+  const failed = checks.find((c) => c.status === "Failed");
+  const unavailable = checks.find((c) => c.status === "Unavailable");
+  const doc = (id, check, extra = {}) => ({
+    id,
     title: "Tarixiy tekshiruv",
-    checkId: i === 3 ? "" : "AT-01",
-    claimedStatus: ["Not run", "Passed", "Failed", "Blocked"][i % 4],
-    expectedStatus: i === 3 ? null : "Unavailable",
-    verdict,
-    detail: "Izoh",
-  }));
-  a.reports = [
-    "matched",
-    "incomplete",
-    "not-failing",
-    "unlinked",
-    "closed",
-    "sample",
-    "unavailable",
-  ].map((verdict, i) => ({
-    id: `historical-report-${i}`,
-    title: "Tarixiy report",
-    checkId: i === 3 ? "" : "AT-01",
-    verdict,
-    missing: i === 1 ? ["Qadamlar", "Haqiqiy natija"] : [],
-    detail: "Izoh",
-  }));
+    requirementId: check?.requirementId || "",
+    checkId: check?.id || "",
+    status: "Passed",
+    expected: "Kutilgan",
+    actual: "Haqiqiy",
+    ...extra,
+  });
+  s.checklist = [
+    doc("correct", passed),
+    doc("wrong", failed),
+    doc("unmarked", passed, { status: "Not run" }),
+    doc("unlinked", null),
+    doc("unavailable", unavailable, { requirementId: "" }),
+    doc("sample", passed, { title: "[Namuna] Tekshiruv" }),
+  ];
+  // Missing-scope documents cannot link to a removed requirement. A historical
+  // check result can still be unavailable when a fixture is absent instead.
+  s.scenario.requirements.push({
+    id: "REQ-07",
+    module: "Login",
+    title: "Login",
+    description: "Kirish",
+  });
+  s.scenario.products = s.scenario.products.filter((p) => p.stock !== 0);
+  const absent = checks.find((c) => c.id === "AT-04");
+  s.checklist[4] = doc("unavailable", absent);
+  const finding = (id, check, extra = {}) => ({
+    ...report(),
+    id,
+    title: "Haqiqiy report",
+    requirementId: check?.requirementId || "",
+    checkId: check?.id || "",
+    evidence: [],
+    ...extra,
+  });
+  s.reports = [
+    finding("matched", failed),
+    finding("incomplete", failed, { actual: "" }),
+    finding("not-failing", passed),
+    finding("unlinked-report", null),
+    finding("closed", failed, { status: "Closed" }),
+    finding("sample-report", failed, { title: "[Namuna] Report" }),
+    finding("unavailable-report", absent),
+  ];
+  s.assessments = [
+    createAssessment(s, { id: "coherent-verdicts", createdAt: now }),
+  ];
+  const input = backup(s);
   assert.equal(validateBackup(input), input);
+  assert.deepEqual(
+    new Set(s.assessments[0].comparisons.map((r) => r.verdict)),
+    new Set([
+      "correct",
+      "wrong",
+      "unmarked",
+      "unlinked",
+      "sample",
+      "unavailable",
+    ]),
+  );
+  assert.deepEqual(
+    new Set(s.assessments[0].reports.map((r) => r.verdict)),
+    new Set([
+      "matched",
+      "incomplete",
+      "not-failing",
+      "unlinked",
+      "closed",
+      "sample",
+      "unavailable",
+    ]),
+  );
 });
+
+test("partial requirement scopes can be assessed and saved without inventing coverage", () => {
+  const s = session();
+  s.scenario.requirements = s.scenario.requirements.filter(
+    (r) => r.id === "REQ-01",
+  );
+  s.scenario.bugs = s.scenario.bugs.filter((b) => b.requirementId === "REQ-01");
+  s.assessments = [
+    createAssessment(s, { id: "partial-scope", createdAt: now }),
+  ];
+  assert.equal(s.assessments[0].summary.available, 1);
+  const value = backup(s);
+  assert.equal(validateBackup(value), value);
+});
+
+for (const [name, change] of [
+  [
+    "wrong canonical requirement",
+    (a) => {
+      a.checks[0].requirementId = "REQ-02";
+    },
+  ],
+  [
+    "summary contradicts check results",
+    (a) => {
+      a.summary.available = 0;
+    },
+  ],
+  [
+    "summary contradicts comparisons",
+    (a) => {
+      a.summary.correct = 14;
+    },
+  ],
+  [
+    "comparison contradicts expected status",
+    (a) => {
+      a.comparisons[0].expectedStatus = "Unavailable";
+    },
+  ],
+  [
+    "missed-check list contradicts findings",
+    (a) => {
+      a.missedCheckIds = [];
+    },
+  ],
+])
+  test(`rejects internally inconsistent assessment: ${name}`, () => {
+    const input = assessedBackup();
+    change(input.sessions[0].assessments[0]);
+    assert.throws(
+      () => validateBackup(input),
+      /QA Lab zaxira formatiga mos emas/,
+    );
+  });
 
 const malformedAssessment = [
   [

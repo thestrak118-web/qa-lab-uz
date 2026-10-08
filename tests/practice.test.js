@@ -83,3 +83,27 @@ test("guidance never changes test statuses or marks the exercise complete", () =
   nextPracticeStep(data);
   assert.deepEqual(data, before);
 });
+
+test("sample documents cannot advance guidance as completed learner work", () => {
+  assert.equal(
+    nextPracticeStep(
+      session({
+        checklist: [{ title: "[Namuna] Qidiruv", status: "Passed" }],
+        cases: [{ title: " [namuna] Qadamlar", status: "Passed" }],
+      }),
+    ).target,
+    "requirements",
+  );
+});
+
+test("an example report does not satisfy a real observed failure", () => {
+  assert.equal(
+    nextPracticeStep(
+      session({
+        cases: [{ title: "Haqiqiy tekshiruv", status: "Failed" }],
+        reports: [{ title: "[Namuna] Tayyor report" }],
+      }),
+    ).target,
+    "reports",
+  );
+});

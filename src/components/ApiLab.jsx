@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Play, Braces, Clock3, Copy, Check } from "lucide-react";
 import { simulateApi } from "../lib/scenario.js";
 const presets = [
@@ -8,16 +8,50 @@ const presets = [
   ["Login", "POST", "/login", '{"email":"qa@lab.uz","password":"Test123!"}'],
   ["Kupon", "POST", "/coupons/check", '{"code":"QA10"}'],
 ];
+const requestKey = (sessionId) => `qa-lab-api-request-v1:${sessionId}`;
+function restoredRequest(sessionId) {
+  try {
+    const value = JSON.parse(
+      sessionStorage.getItem(requestKey(sessionId)) || "null",
+    );
+    return value &&
+      ["GET", "POST"].includes(value.method) &&
+      typeof value.path === "string" &&
+      typeof value.body === "string"
+      ? value
+      : null;
+  } catch {
+    return null;
+  }
+}
 export default function ApiLab({ session, onUpdate }) {
-  const [method, setMethod] = useState("GET"),
-    [path, setPath] = useState("/products"),
-    [body, setBody] = useState(""),
+  const [restored] = useState(() => restoredRequest(session.id));
+  const [method, setMethod] = useState(restored?.method || "GET"),
+    [path, setPath] = useState(restored?.path || "/products"),
+    [body, setBody] = useState(restored?.body || ""),
     [response, setResponse] = useState(null),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
+    [copyError, setCopyError] = useState(""),
     [copied, setCopied] = useState(false);
-  async function run() {
+  const [requestStored, setRequestStored] = useState(true);
+  const copyTimer = useRef(null);
+  useEffect(() => () => clearTimeout(copyTimer.current), []);
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(
+        requestKey(session.id),
+        JSON.stringify({ method, path, body }),
+      );
+      setRequestStored(true);
+    } catch {
+      setRequestStored(false);
+    }
+  }, [session.id, method, path, body]);
+  function run(event) {
+    event?.preventDefault();
     setError("");
+    setCopyError("");
+    setCopied(false);
     let parsed = {};
     try {
       parsed = body ? JSON.parse(body) : {};
@@ -25,46 +59,50 @@ export default function ApiLab({ session, onUpdate }) {
       setError("JSON noto‘g‘ri. Kalit va matnlarni qo‘shtirnoqqa oling.");
       return;
     }
-    if (!path.startsWith("/")) {
-      setError("Endpoint / belgisi bilan boshlanishi kerak.");
+    const endpoint = path.trim();
+    if (!/^\/(?![\/\\])/.test(endpoint)) {
+      setError(
+        "Mahalliy endpoint kiriting: masalan, /products. To‘liq tashqi URL qabul qilinmaydi.",
+      );
       return;
     }
-    setBusy(true);
     try {
-      await new Promise((r) => setTimeout(r, 220));
+      // This is a synchronous local simulator. Artificial network delays used
+      // to let an old request overwrite newer cart edits after navigation.
+      const request = { method, path: endpoint, body: parsed };
       const result = simulateApi(
         session.scenario,
         session.productState,
         session.fixedBugIds,
-        { method, path, body: parsed },
+        request,
       );
       setResponse({
         status: result.status,
         body: result.body,
         duration: result.duration,
+        request: { method, path: endpoint, body },
       });
-      onUpdate((current) =>
-        current.id !== session.id
-          ? {}
-          : {
-              ...(result.productState
-                ? { productState: result.productState }
-                : {}),
-              activity: [
-                {
-                  id: crypto.randomUUID(),
-                  at: new Date().toISOString(),
-                  action: `API ${method} ${path}`,
-                  detail: `${result.status} · ${result.duration} ms`,
-                },
-                ...current.activity,
-              ].slice(0, 100),
-            },
-      );
+      const activity = {
+        id: crypto.randomUUID(),
+        at: new Date().toISOString(),
+        action: `API ${method} ${endpoint}`,
+        detail: `${result.status} · ${result.duration} ms (simulyatsiya)`,
+      };
+      onUpdate((current) => {
+        if (current.id !== session.id) return {};
+        const latest = simulateApi(
+          current.scenario,
+          current.productState,
+          current.fixedBugIds,
+          request,
+        );
+        return {
+          ...(latest.productState ? { productState: latest.productState } : {}),
+          activity: [activity, ...current.activity].slice(0, 100),
+        };
+      });
     } catch (e) {
       setError(e.message);
-    } finally {
-      setBusy(false);
     }
   }
   return (
@@ -96,7 +134,7 @@ export default function ApiLab({ session, onUpdate }) {
             </button>
           ))}
         </div>
-        <div className="request-bar">
+        <form className="request-bar" onSubmit={run}>
           <select
             aria-label="HTTP method"
             value={method}
@@ -110,11 +148,11 @@ export default function ApiLab({ session, onUpdate }) {
             value={path}
             onChange={(e) => setPath(e.target.value)}
           />
-          <button className="btn btn-primary" onClick={run} disabled={busy}>
+          <button type="submit" className="btn btn-primary">
             <Play size={15} />
-            {busy ? "Kutilmoqda…" : "Yuborish"}
+            Yuborish
           </button>
-        </div>
+        </form>
         <label className="field">
           Request body (JSON)
           <textarea
@@ -126,6 +164,12 @@ export default function ApiLab({ session, onUpdate }) {
             placeholder={'{\n  "code": "..."\n}'}
           />
         </label>
+        {!requestStored && (
+          <p className="error-message" role="alert">
+            So‘rov qoralamasi saqlanmadi. Sahifadan chiqishdan oldin kerakli
+            matnni nusxalang.
+          </p>
+        )}
         {error && (
           <p className="error-message" role="alert">
             {error}
@@ -141,20 +185,25 @@ export default function ApiLab({ session, onUpdate }) {
                 {response.status}
               </span>
               <span className="muted">
-                <Clock3 size={12} /> {response.duration} ms
+                <Clock3 size={12} /> {response.duration} ms · simulyatsiya
               </span>
               <button
                 className="icon-button"
                 aria-label="Javobni nusxalash"
                 onClick={async () => {
+                  setCopyError("");
                   try {
                     await navigator.clipboard.writeText(
                       JSON.stringify(response.body, null, 2),
                     );
                     setCopied(true);
-                    setTimeout(() => setCopied(false), 1200);
+                    clearTimeout(copyTimer.current);
+                    copyTimer.current = setTimeout(
+                      () => setCopied(false),
+                      1200,
+                    );
                   } catch {
-                    setError(
+                    setCopyError(
                       "Nusxalashga ruxsat yo‘q. Javob matnini belgilang.",
                     );
                   }
@@ -165,6 +214,27 @@ export default function ApiLab({ session, onUpdate }) {
             </div>
           )}
         </div>
+        {copyError && (
+          <p className="error-message" role="alert">
+            {copyError}
+          </p>
+        )}
+        {response && (
+          <p className="muted api-response-request">
+            Javob:{" "}
+            <code>
+              {response.request.method} {response.request.path}
+            </code>
+            {(response.request.method !== method ||
+              response.request.path !== path.trim() ||
+              response.request.body !== body) && (
+              <span>
+                {" "}
+                · So‘rov o‘zgardi. Yangi javob uchun Yuborishni bosing.
+              </span>
+            )}
+          </p>
+        )}
         <pre className="response-code">
           {response
             ? JSON.stringify(response.body, null, 2)

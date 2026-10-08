@@ -1953,3 +1953,62 @@ small {
     padding: 12px 16px;
   }
 }
+
+.storage-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.storage-recovery-actions button {
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 8px 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.skip-link {
+  position: fixed;
+  top: -80px;
+  left: 12px;
+  z-index: 200;
+  padding: 10px 16px;
+  background: var(--surface, #fff);
+  color: var(--ink);
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+}
+.skip-link:focus { top: 10px; }
+.mobile-menu-close { display: none; }
+@media (max-width: 760px) {
+  .mobile-menu-close { display: flex; align-self: flex-end; margin: -10px -8px 4px 0; }
+}
+
+.toast.toast-error {
+  background: #8f2924;
+  color: #fff;
+}
+.toast > svg {
+  flex-shrink: 0;
+}
+
+/* User-provided names and seeds can be a single unbroken word. */
+.page-heading > div:first-child {
+  min-width: 0;
+}
+.page-heading p,
+.project-name h2,
+.project-details dd,
+.history-card h3,
+.history-card > p,
+.info-note,
+.session-strip {
+  overflow-wrap: anywhere;
+}
+
+.history-import-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}

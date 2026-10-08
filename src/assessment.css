@@ -462,3 +462,34 @@
     background: var(--surface-raised);
   }
 }
+
+.assessment-archive {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 10px;
+}
+.assessment-table td {
+  overflow-wrap: anywhere;
+}
+
+.assessment-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.assessment-pager > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.assessment-pager .btn {
+  font-size: 11px;
+  padding: 7px 10px;
+}

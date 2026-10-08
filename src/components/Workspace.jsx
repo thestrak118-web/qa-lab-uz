@@ -1,4 +1,11 @@
-import { cloneElement, useEffect, useId, useRef, useState } from "react";
+import {
+  cloneElement,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Plus,
   Download,
@@ -14,11 +21,61 @@ import {
   ArrowUpRight,
   RotateCcw,
   BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import "../workspace.css";
 import { CHECK_DEFINITIONS } from "../lib/checks.js";
+import { isSampleDocument } from "../lib/practice.js";
+import { useDialogFocus } from "../lib/useDialogFocus.js";
+import {
+  draftSnapshot,
+  readDraft,
+  writeDraft,
+} from "../lib/workspaceDrafts.js";
+
+function draftStorage() {
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
 
 const TEST_STATUSES = ["Not run", "Passed", "Failed", "Blocked"];
+const PAGE_SIZE = 50;
+const matchesDocument = (item, query, filter) =>
+  (filter === "all" || item.status === filter) &&
+  `${item.title} ${item.requirementId || ""} ${item.module || ""} ${item.actual || ""}`
+    .toLocaleLowerCase()
+    .includes(query.toLocaleLowerCase());
+
+function documentDisplayKeys(items, prefix) {
+  const groups = new Map();
+  for (const { id } of items) {
+    let hash = 2166136261;
+    for (let index = 0; index < id.length; index++)
+      hash = Math.imul(hash ^ id.charCodeAt(index), 16777619);
+    const short = (hash >>> 0).toString(36).padStart(7, "0").toUpperCase();
+    if (!groups.has(short)) groups.set(short, []);
+    groups.get(short).push(id);
+  }
+  const keys = new Map();
+  for (const [short, ids] of groups) {
+    // Resolve even a checksum collision using full IDs in a stable order.
+    // Build from the complete collection so filters and pages never rename it.
+    if (ids.length > 1) ids.sort();
+    ids.forEach((id, index) =>
+      keys.set(
+        id,
+        `${prefix}-${short}${ids.length > 1 ? `-${(index + 1).toString(36).toUpperCase()}` : ""}`,
+      ),
+    );
+  }
+  return keys;
+}
 const REPORT_STATUSES = [
   "Open",
   "In progress",
@@ -125,6 +182,78 @@ function Field({ label, hint, children, wide }) {
   );
 }
 
+function EvidenceImage({ evidence, preview = false }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [evidence.id, evidence.dataUrl]);
+  return broken ? (
+    <div className="workspace-image-error" role="note">
+      {preview
+        ? "Rasmni ko‘rsatib bo‘lmadi. Fayl buzilgan bo‘lishi mumkin; reportni tahrirlab, ishlaydigan screenshot biriktiring."
+        : "Rasm ochilmadi"}
+    </div>
+  ) : (
+    <img
+      src={evidence.dataUrl}
+      alt={evidence.name}
+      onError={() => setBroken(true)}
+    />
+  );
+}
+
+function DocumentPagination({ page, pages, total, onChange, bottom = false }) {
+  if (pages <= 1) return null;
+  return (
+    <nav
+      className="workspace-pagination"
+      aria-label={
+        bottom ? "Yozuvlar sahifalari, ro‘yxat oxiri" : "Yozuvlar sahifalari"
+      }
+    >
+      <span role={bottom ? undefined : "status"}>
+        {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} /{" "}
+        {total} yozuv
+        <small>
+          {page} / {pages} sahifa
+        </small>
+      </span>
+      <div>
+        <button
+          type="button"
+          aria-label="Birinchi yozuvlar sahifasi"
+          disabled={page === 1}
+          onClick={() => onChange(1)}
+        >
+          <ChevronsLeft size={17} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label="Oldingi yozuvlar sahifasi"
+          disabled={page === 1}
+          onClick={() => onChange(page - 1)}
+        >
+          <ChevronLeft size={17} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label="Keyingi yozuvlar sahifasi"
+          disabled={page === pages}
+          onClick={() => onChange(page + 1)}
+        >
+          <ChevronRight size={17} aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label="Oxirgi yozuvlar sahifasi"
+          disabled={page === pages}
+          onClick={() => onChange(pages)}
+        >
+          <ChevronsRight size={17} aria-hidden="true" />
+        </button>
+      </div>
+    </nav>
+  );
+}
+
 export default function Workspace({
   session,
   onUpdate,
@@ -138,12 +267,21 @@ export default function Workspace({
   const requirements = session.scenario?.requirements || [];
   const items = session[tab] || [];
   const statuses = isReport ? REPORT_STATUSES : TEST_STATUSES;
+  const [recovered] = useState(() => readDraft(draftStorage(), session, tab));
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
-  const [draft, setDraft] = useState(null);
-  const [editing, setEditing] = useState(false);
+  const [page, setPage] = useState(1);
+  const [revealId, setRevealId] = useState(null);
+  const [draft, setDraft] = useState(recovered?.draft || null);
+  const [editing, setEditing] = useState(recovered?.editing || false);
+  const [recovery, setRecovery] = useState(recovered?.recovery || null);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(
+    recovered
+      ? "Tugallanmagan qoralama tiklandi. Yozuvga kiritish uchun Saqlash tugmasini bosing."
+      : "",
+  );
+  const [draftStored, setDraftStored] = useState(true);
   const [removed, setRemoved] = useState(null);
   const [preview, setPreview] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -151,50 +289,42 @@ export default function Workspace({
   const editorRef = useRef(null);
   const imageInput = useRef(null);
   const previewRef = useRef(null);
+  const baselineRef = useRef(recovered?.baseline || "");
+  const savedBaselineRef = useRef(recovered?.savedBaseline || "");
+  const handledComposeRef = useRef(null);
+  const dirty = Boolean(draft && draftSnapshot(draft) !== baselineRef.current);
 
   useEffect(() => {
-    setQuery("");
-    setFilter("all");
-    setDraft(null);
-    setEditing(false);
-    setError("");
-    setMessage("");
-    setRemoved(null);
-    setPreview(null);
-  }, [session.id, tab]);
+    setDraftStored(
+      writeDraft(
+        draftStorage(),
+        session.id,
+        tab,
+        draft
+          ? {
+              draft,
+              editing,
+              baseline: baselineRef.current,
+              savedBaseline: savedBaselineRef.current,
+              ...(recovery ? { recovery } : {}),
+            }
+          : null,
+      ),
+    );
+  }, [draft, editing, recovery, session.id, tab]);
+  useEffect(() => {
+    if (!draft || (!uploading && (draftStored || !dirty))) return;
+    const beforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [draft, draftStored, uploading, dirty]);
   useEffect(() => {
     if (draft) editorRef.current?.querySelector("input")?.focus();
   }, [draft?.id]);
-  useEffect(() => {
-    if (!preview) return;
-    const original = document.activeElement;
-    previewRef.current?.focus();
-    function keydown(event) {
-      if (event.key === "Escape") setPreview(null);
-      if (event.key === "Tab") {
-        const focusables = previewRef.current?.querySelectorAll("button");
-        if (!focusables?.length) return;
-        const first = focusables[0],
-          last = focusables[focusables.length - 1];
-        if (
-          event.shiftKey &&
-          (document.activeElement === first ||
-            document.activeElement === previewRef.current)
-        ) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    }
-    window.addEventListener("keydown", keydown);
-    return () => {
-      window.removeEventListener("keydown", keydown);
-      original?.focus?.();
-    };
-  }, [preview]);
+  useDialogFocus(previewRef, Boolean(preview), () => setPreview(null));
 
   const blank = () => ({
     id: uid(),
@@ -211,8 +341,7 @@ export default function Workspace({
           module: "",
           steps: "",
           severity: "Medium",
-          environment:
-            session.environment || "Brauzer: … / OS: … / Ekran o‘lchami: …",
+          environment: `Seed ${session.seed} · Build ${session.fixedBugIds.length ? "1.1" : "1.0"} · ${window.innerWidth}×${window.innerHeight} · ${navigator.userAgent}`,
           evidence: [],
           createdAt: new Date().toISOString(),
         }
@@ -220,37 +349,53 @@ export default function Workspace({
   });
   const patchDraft = (patch) =>
     setDraft((current) => (current ? { ...current, ...patch } : null));
-  const openNew = () => {
-    setDraft(blank());
-    setEditing(false);
+  const allowReplace = () =>
+    !dirty ||
+    window.confirm("Qoralamadagi saqlanmagan o‘zgarishlar bekor qilinsinmi?");
+  const beginDraft = (value, saved = null) => {
+    if (!allowReplace()) return false;
+    baselineRef.current = draftSnapshot(value);
+    savedBaselineRef.current = saved ? draftSnapshot(saved) : "";
+    setDraft(value);
+    setEditing(Boolean(saved));
+    setRecovery(null);
     setError("");
     setMessage("");
+    return true;
+  };
+  const openNew = () => {
+    beginDraft(blank());
   };
   useEffect(() => {
-    if (!composeRequest || composeRequest.tab !== tab) return;
+    if (
+      !composeRequest ||
+      composeRequest.tab !== tab ||
+      handledComposeRef.current === composeRequest.id
+    )
+      return;
+    handledComposeRef.current = composeRequest.id;
     const requirement = requirements.find(
       (item) => item.id === composeRequest.requirementId,
     );
     if (requirement) {
-      setDraft({ ...blank(), requirementId: requirement.id });
-      setEditing(false);
-      setError("");
-      setMessage("");
+      beginDraft({ ...blank(), requirementId: requirement.id });
     }
     onComposeHandled?.();
   }, [composeRequest?.id, session.id, tab]);
   const edit = (item) => {
-    setDraft({
-      ...item,
-      steps: asText(item.steps),
-      evidence: [...(item.evidence || [])],
-    });
-    setEditing(true);
-    setError("");
-    setMessage("");
+    beginDraft(
+      {
+        ...item,
+        steps: asText(item.steps),
+        evidence: [...(item.evidence || [])],
+      },
+      item,
+    );
   };
-  const close = () => {
+  const close = (discard = false) => {
+    if (!discard && !allowReplace()) return;
     setDraft(null);
+    setRecovery(null);
     setError("");
     headingRef.current?.focus();
   };
@@ -305,7 +450,8 @@ export default function Workspace({
       editing ? "O‘zgarishlar saqlandi." : `${meta.singular} saqlandi.`,
     );
     setRemoved(null);
-    close();
+    setRevealId(entry.id);
+    close(true);
   }
   function addSample() {
     const requirement =
@@ -338,9 +484,7 @@ export default function Workspace({
         actual:
           "NAMUNA: Air uchun mahsulot chiqdi, AIR uchun natija topilmadi. Bu haqiqiy tekshiruv natijasi emas.",
       });
-    setDraft(item);
-    setEditing(false);
-    setError("");
+    if (!beginDraft(item)) return;
     setMessage(
       "Namuna tahrirlash uchun ochildi. Uni o‘zingizning tekshiruvingizga moslang.",
     );
@@ -350,10 +494,11 @@ export default function Workspace({
     updateItems((current) => current.filter((entry) => entry.id !== item.id));
     setRemoved({ item, index });
     setMessage(`${meta.singular} o‘chirildi.`);
-    if (draft?.id === item.id) close();
+    if (draft?.id === item.id) close(true);
   }
   function undo() {
     if (!removed) return;
+    setRevealId(removed.item.id);
     updateItems((current) => {
       const result = [...current];
       if (!result.some((item) => item.id === removed.item.id))
@@ -364,14 +509,21 @@ export default function Workspace({
     setMessage("Yozuv tiklandi.");
   }
   function changeStatus(id, status) {
+    const updatedAt = new Date().toISOString();
     updateItems((current) =>
       current.map((item) =>
-        item.id === id
-          ? { ...item, status, updatedAt: new Date().toISOString() }
-          : item,
+        item.id === id ? { ...item, status, updatedAt } : item,
       ),
     );
-    if (draft?.id === id) patchDraft({ status });
+    if (draft?.id === id) {
+      const saved = items.find((item) => item.id === id);
+      savedBaselineRef.current = draftSnapshot({
+        ...saved,
+        status,
+        updatedAt,
+      });
+      patchDraft({ status });
+    }
     setMessage("Holat yangilandi.");
   }
   async function attach(event) {
@@ -406,13 +558,18 @@ export default function Workspace({
               const reader = new FileReader();
               reader.onerror = () =>
                 reject(new Error("Rasmni o‘qib bo‘lmadi."));
-              reader.onload = () =>
-                resolve({
-                  id: uid(),
-                  name: file.name,
-                  type: file.type,
-                  dataUrl: reader.result,
-                });
+              reader.onload = () => {
+                const image = new Image();
+                image.onload = () =>
+                  resolve({
+                    id: uid(),
+                    name: file.name,
+                    type: file.type,
+                    dataUrl: reader.result,
+                  });
+                image.onerror = () => reject(new Error("Rasm fayli buzilgan."));
+                image.src = reader.result;
+              };
               reader.readAsDataURL(file);
             }),
         ),
@@ -475,19 +632,47 @@ export default function Workspace({
     );
   }
 
-  const visibleItems = items.filter(
-    (item) =>
-      (filter === "all" || item.status === filter) &&
-      `${item.title} ${item.requirementId || ""} ${item.module || ""} ${item.actual || ""}`
-        .toLocaleLowerCase()
-        .includes(query.toLocaleLowerCase()),
+  const visibleItems = useMemo(
+    () => items.filter((item) => matchesDocument(item, query, filter)),
+    [items, query, filter],
   );
-  const recordKey = (item) =>
-    `${isReport ? "BUG" : tab === "cases" ? "TC" : "CHK"}-${String(item.id)
-      .replace(/[^a-zA-Z0-9]/g, "")
-      .slice(0, 6)
-      .toUpperCase()}`;
-  const completed = items.filter((item) =>
+  const pageCount = Math.max(1, Math.ceil(visibleItems.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+  const pageItems = visibleItems.slice(
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
+  );
+  useEffect(() => setPage(1), [session.id, tab]);
+  useEffect(
+    () => setPage((current) => Math.min(current, pageCount)),
+    [pageCount],
+  );
+  useEffect(() => {
+    if (!revealId) return;
+    const item = items.find((entry) => entry.id === revealId);
+    if (!item) return;
+    const matches = matchesDocument(item, query, filter);
+    if (!matches) {
+      setQuery("");
+      setFilter("all");
+    }
+    const index = (matches ? visibleItems : items).findIndex(
+      (entry) => entry.id === revealId,
+    );
+    setPage(Math.floor(index / PAGE_SIZE) + 1);
+    setRevealId(null);
+  }, [items, visibleItems, revealId, query, filter]);
+  const recordKeys = useMemo(
+    () =>
+      documentDisplayKeys(
+        items,
+        tab === "reports" ? "BUG" : tab === "cases" ? "TC" : "CHK",
+      ),
+    [items, tab],
+  );
+  const recordKey = (item) => recordKeys.get(item.id);
+  const learnerItems = items.filter((item) => !isSampleDocument(item));
+  const completed = learnerItems.filter((item) =>
     isReport
       ? item.status === "Closed"
       : ["Passed", "Failed"].includes(item.status),
@@ -536,14 +721,16 @@ export default function Workspace({
         </div>
         <div>
           <span>{isReport ? "Ochiq muammolar" : "Bajarilgan testlar"}</span>
-          <strong>{isReport ? items.length - completed : completed}</strong>
+          <strong>
+            {isReport ? learnerItems.length - completed : completed}
+          </strong>
         </div>
         <div>
           <span>{isReport ? "Yopilgan" : "Xato aniqlangan"}</span>
           <strong className={isReport ? "" : "workspace-error-number"}>
             {isReport
               ? completed
-              : items.filter((item) => item.status === "Failed").length}
+              : learnerItems.filter((item) => item.status === "Failed").length}
           </strong>
         </div>
         <div className="workspace-summary-note">
@@ -586,7 +773,7 @@ export default function Workspace({
             <button
               type="button"
               className="workspace-icon-btn"
-              onClick={close}
+              onClick={() => close()}
               aria-label="Formani yopish"
             >
               <X size={20} />
@@ -597,6 +784,16 @@ export default function Workspace({
               ? "“Ishlamayapti” o‘rniga aniq holatni yozing. Masalan: “Bo‘sh email bilan profil saqlanmoqda”. * belgili maydonlar majburiy."
               : "Bir yozuv — bitta tekshiruv. Natijani tekshiruvdan keyin to‘ldiring. * belgili maydonlar majburiy."}
           </p>
+          {recovery && (
+            <p className="info-note workspace-recovery-note" role="status">
+              {recovery.reason === "deleted"
+                ? "Asl yozuv o‘chirilgan."
+                : "Asl yozuvning yangi saqlangan nusxasi bor."}{" "}
+              Sizning tugallanmagan qoralamangiz alohida nusxa sifatida
+              tiklandi. Saqlash tugmasi yangi yozuv yaratadi; asl yozuv
+              o‘zgarmaydi.
+            </p>
+          )}
           <div className="workspace-form-grid">
             <Field label="Sarlavha *" wide>
               <input
@@ -694,8 +891,11 @@ export default function Workspace({
                 </option>
                 {CHECK_DEFINITIONS.filter(
                   (item) =>
-                    !draft.requirementId ||
-                    item.requirementId === draft.requirementId,
+                    requirements.some(
+                      (requirement) => requirement.id === item.requirementId,
+                    ) &&
+                    (!draft.requirementId ||
+                      item.requirementId === draft.requirementId),
                 ).map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.id} · {item.title}
@@ -762,6 +962,7 @@ export default function Workspace({
                   <input
                     className="field"
                     value={draft.environment || ""}
+                    placeholder="Masalan: Chrome 130 / Windows 11 / 1366 × 768"
                     onChange={(event) =>
                       patchDraft({ environment: event.target.value })
                     }
@@ -893,7 +1094,7 @@ export default function Workspace({
                         aria-label={`${item.name} rasmini ko‘rish`}
                         onClick={() => setPreview(item)}
                       >
-                        <img src={item.dataUrl} alt={item.name} />
+                        <EvidenceImage evidence={item} />
                       </button>
                       <span title={item.name}>{item.name}</span>
                       <div>
@@ -932,12 +1133,16 @@ export default function Workspace({
             </p>
           )}
           <footer className="workspace-editor-footer">
-            <span>Faqat shu mashqqa saqlanadi.</span>
+            <span role="status">
+              {draftStored
+                ? "Qoralama shu brauzer varag‘ida saqlanadi. Ro‘yxat va bahoga kiritish uchun Saqlashni bosing."
+                : "Qoralamani vaqtincha saqlab bo‘lmadi. Sahifadan chiqishdan oldin yozuvni saqlang."}
+            </span>
             <div>
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={close}
+                onClick={() => close()}
               >
                 Bekor qilish
               </button>
@@ -960,7 +1165,10 @@ export default function Workspace({
           <input
             aria-label="Yozuvlarni qidirish"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setPage(1);
+            }}
             placeholder="Sarlavha yoki talab bo‘yicha qidirish…"
           />
         </div>
@@ -968,7 +1176,10 @@ export default function Workspace({
           className="field workspace-filter"
           aria-label="Holat bo‘yicha filtrlash"
           value={filter}
-          onChange={(event) => setFilter(event.target.value)}
+          onChange={(event) => {
+            setFilter(event.target.value);
+            setPage(1);
+          }}
         >
           <option value="all">Barcha holatlar</option>
           {statuses.map((status) => (
@@ -1026,12 +1237,19 @@ export default function Workspace({
                 onClick={() => {
                   setQuery("");
                   setFilter("all");
+                  setPage(1);
                 }}
               >
                 Filtrni tozalash
               </button>
             </div>
           )}
+          <DocumentPagination
+            page={currentPage}
+            pages={pageCount}
+            total={visibleItems.length}
+            onChange={setPage}
+          />
           <div className="workspace-records">
             {visibleItems.length > 0 && (
               <div className="workspace-table-header" aria-hidden="true">
@@ -1041,7 +1259,7 @@ export default function Workspace({
                 <span>Amallar</span>
               </div>
             )}
-            {visibleItems.map((item) => (
+            {pageItems.map((item) => (
               <article key={item.id} className="workspace-record">
                 <div className="workspace-record-top">
                   <span
@@ -1191,6 +1409,16 @@ export default function Workspace({
               </article>
             ))}
           </div>
+          <DocumentPagination
+            page={currentPage}
+            pages={pageCount}
+            total={visibleItems.length}
+            onChange={(nextPage) => {
+              setPage(nextPage);
+              headingRef.current?.focus();
+            }}
+            bottom
+          />
         </>
       )}
 
@@ -1229,7 +1457,7 @@ export default function Workspace({
                 </button>
               </div>
             </header>
-            <img src={preview.dataUrl} alt={preview.name} />
+            <EvidenceImage evidence={preview} preview />
           </div>
         </div>
       )}

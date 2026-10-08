@@ -1,5 +1,6 @@
 import { test as base, expect } from "@playwright/test";
 import { runChecks } from "../src/lib/checks.js";
+import { createAssessment } from "../src/lib/assessment.js";
 
 const test = base.extend({
   page: async ({ page }, use) => {
@@ -221,7 +222,16 @@ test("real learner submits deliberately, keeps cart and documents, edits and ret
     .getByRole("button", { name: "Hali tayyor emasman" })
     .click();
   await expect(panel(page).locator(".assessment-total")).toHaveCount(0);
+  await expect(
+    panel(page).getByRole("button", {
+      name: "Mashqni topshirish",
+      exact: true,
+    }),
+  ).toBeFocused();
   await submit(page);
+  await expect(
+    panel(page).getByRole("button", { name: "Qayta topshirish", exact: true }),
+  ).toBeFocused();
   const first = active(await stored(page));
   expect(first.productState).toEqual(before.productState);
   expect(first.checklist).toEqual(before.checklist);
@@ -276,6 +286,18 @@ test("real learner submits deliberately, keeps cart and documents, edits and ret
   await expect(panel(page).locator(".assessment-meta")).toContainText(
     "Mustaqil topshirish",
   );
+  await expect(panel(page).getByRole("status")).toContainText(
+    "Arxivdagi urinish",
+  );
+  await panel(page)
+    .getByRole("button", { name: "Oxirgi bahoni ko‘rish" })
+    .click();
+  await expect(panel(page).locator(".assessment-total strong")).toHaveText(
+    String(second.assessments[1].score),
+  );
+  await expect(
+    panel(page).getByText("Arxivdagi urinish", { exact: false }),
+  ).toHaveCount(0);
   await page
     .getByRole("button", { name: "Tuzatilgan build’ni ochish", exact: true })
     .click();
@@ -404,4 +426,304 @@ test("dark mobile assessment supports empty submissions, filters and scrollable 
     ),
   ).toBe(true);
   await expect(panel(page).locator(".assessment-scroll").first()).toBeVisible();
+});
+
+test("contradictory checklist and test-case results remain visible together for correction", async ({
+  page,
+}) => {
+  await openExercise(page);
+  const fixture = completedFixture(active(await stored(page)), "Zid natijalar");
+  const first = fixture.checklist[0];
+  fixture.checklist.push({
+    ...first,
+    id: "sample-same-check",
+    title: "[Namuna] Alohida namuna",
+  });
+  fixture.cases = [
+    {
+      ...first,
+      id: "contradictory-case",
+      title: "Xuddi shu mezonning qarama-qarshi natijasi",
+      status: first.status === "Passed" ? "Failed" : "Passed",
+      steps: "Bir xil mezonni qayta bajaring.",
+      preconditions: "Do‘kon ochiq.",
+      testData: "Sinov ma’lumotlari",
+    },
+  ];
+  await importBackup(
+    page,
+    { version: 1, activeId: fixture.id, sessions: [fixture] },
+    fixture.name,
+  );
+  await nav(page, "Natija va retest");
+  await submit(page);
+  await panel(page)
+    .getByRole("button", { name: "Ko‘rib chiqish kerak", exact: true })
+    .click();
+  const rows = panel(page).getByRole("table").locator("tbody tr");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toContainText("Zid holatlar — ball yo‘q");
+  await expect(rows.nth(1)).toContainText("Namuna — hisoblanmagan");
+  await expect(rows.nth(1)).not.toContainText("Zid holatlar — ball yo‘q");
+  await expect(rows.nth(2)).toContainText("Zid holatlar — ball yo‘q");
+  await panel(page)
+    .getByRole("button", { name: "To‘g‘ri", exact: true })
+    .click();
+  await expect(rows).toHaveCount(13);
+  const exported = await download(page, () =>
+    panel(page).getByRole("button", { name: "Bahoni yuklash" }).click(),
+  );
+  expect(exported.text).toContain("Zid holatlar — ball yo‘q");
+});
+
+test("old grading snapshots stay in history and prompt a fresh score after rubric fixes", async ({
+  page,
+}) => {
+  await openExercise(page);
+  const fixture = completedFixture(
+    active(await stored(page)),
+    "Eski bahoni yangilash",
+  );
+  fixture.fixedBugIds = fixture.scenario.bugs.map((bug) => bug.id);
+  fixture.checklist = [{ ...fixture.checklist[0], status: "Failed" }];
+  fixture.cases = [];
+  fixture.reports = [];
+  const oldAttempt = createAssessment(fixture, {
+    id: "old-rubric-attempt",
+    createdAt: "2026-10-07T10:00:00.000Z",
+  });
+  oldAttempt.fingerprint = oldAttempt.fingerprint.replace(
+    "grade-v2-",
+    "grade-v1-",
+  );
+  oldAttempt.dimensions.find((dimension) => dimension.id === "findings").score =
+    25;
+  oldAttempt.dimensions.find(
+    (dimension) => dimension.id === "documentation",
+  ).score = 15;
+  oldAttempt.score = 40;
+  fixture.assessments = [oldAttempt];
+  fixture.reviewUnlocked = true;
+  await importBackup(
+    page,
+    { version: 1, activeId: fixture.id, sessions: [fixture] },
+    fixture.name,
+  );
+  await nav(page, "Natija va retest");
+  await expect(panel(page).locator(".assessment-total strong")).toHaveText(
+    "40",
+  );
+  await expect(panel(page).getByRole("status")).toContainText(
+    "baholash qoidalari o‘zgargan",
+  );
+  await submit(page);
+  await expect(panel(page).locator(".assessment-total strong")).toHaveText("0");
+  const persisted = active(await stored(page));
+  expect(persisted.assessments).toHaveLength(2);
+  expect(persisted.assessments[0]).toEqual(oldAttempt);
+  expect(persisted.assessments[1].fingerprint).toMatch(/^grade-v2-/);
+});
+
+test("large assessment pages every result and report while exports retain all records", async ({
+  page,
+}) => {
+  await openExercise(page);
+  const fixture = completedFixture(
+    active(await stored(page)),
+    "1000 natijali mashq",
+  );
+  const originals = [...fixture.checklist];
+  fixture.checklist = Array.from({ length: 1000 }, (_, index) => ({
+    ...originals[index % originals.length],
+    id: `large-check-${index}`,
+    title: `Tekshiruv ${String(index + 1).padStart(4, "0")}`,
+  }));
+  fixture.checklist[999].checkId = "";
+  const originalReport = fixture.reports[0];
+  fixture.reports = Array.from({ length: 101 }, (_, index) => ({
+    ...originalReport,
+    id: `large-report-${index}`,
+    title: `Report ${String(index + 1).padStart(4, "0")}`,
+  }));
+  await importBackup(
+    page,
+    { version: 1, activeId: fixture.id, sessions: [fixture] },
+    fixture.name,
+  );
+  await nav(page, "Natija va retest");
+  await submit(page);
+  const resultTable = panel(page).getByRole("table").first();
+  const pager = panel(page).getByRole("navigation", {
+    name: "Baholash natijalari sahifalari",
+  });
+  await expect(resultTable.locator("tbody tr")).toHaveCount(50);
+  await expect(pager).toContainText("1–50 / 1000 yozuv");
+  await pager.getByRole("button", { name: "Oxirgi", exact: true }).click();
+  await expect(pager).toContainText("951–1000 / 1000 yozuv");
+  await expect(resultTable).toContainText("Tekshiruv 1000");
+  await expect(
+    panel(page)
+      .locator("summary")
+      .filter({ hasText: "Belgilagan natijalaringiz" }),
+  ).toBeFocused();
+  await page
+    .getByLabel("Tester xulosasi", { exact: true })
+    .fill(
+      "Barcha mezonlar tekshirildi. Izoh yozish natija sahifasini almashtirmaydi.",
+    );
+  await expect(pager).toContainText("951–1000 / 1000 yozuv");
+  await panel(page)
+    .getByRole("button", { name: "Ko‘rib chiqish kerak", exact: true })
+    .click();
+  await expect(resultTable.locator("tbody tr")).toHaveCount(1);
+  await expect(resultTable).toContainText("Tekshiruv 1000");
+  await expect(pager).toHaveCount(0);
+  await panel(page)
+    .getByRole("button", { name: "Hammasi", exact: true })
+    .click();
+  await expect(pager).toContainText("1–50 / 1000 yozuv");
+  const reportSummary = panel(page)
+    .locator("summary")
+    .filter({ hasText: "Reportlar bo‘yicha izoh" });
+  await reportSummary.click();
+  await expect(panel(page).locator(".assessment-report")).toHaveCount(50);
+  const reportPager = panel(page).getByRole("navigation", {
+    name: "Report izohlari sahifalari",
+  });
+  await reportPager
+    .getByRole("button", { name: "Oxirgi", exact: true })
+    .click();
+  await expect(panel(page).locator(".assessment-report")).toHaveCount(1);
+  await expect(panel(page).locator(".assessment-report")).toContainText(
+    "Report 0101",
+  );
+  await expect(reportSummary).toBeFocused();
+  const result = await download(page, () =>
+    panel(page).getByRole("button", { name: "Bahoni yuklash" }).click(),
+  );
+  expect(result.text).toContain("Tekshiruv 0001");
+  expect(result.text).toContain("Tekshiruv 1000");
+  expect(result.text).toContain("Report 0001");
+  expect(result.text).toContain("Report 0101");
+  expect(result.text.match(/- Tekshiruv \d{4}/g) || []).toHaveLength(1000);
+});
+
+test("closing and reopening an unfixed report updates the next grade and preserves prior attempts", async ({
+  page,
+}) => {
+  await openExercise(page);
+  const fixture = completedFixture(
+    active(await stored(page)),
+    "Report holati bilan qayta baholash",
+  );
+  const target = fixture.reports[0];
+  await importBackup(
+    page,
+    { version: 1, activeId: fixture.id, sessions: [fixture] },
+    fixture.name,
+  );
+  await nav(page, "Natija va retest");
+  await submit(page);
+  const first = active(await stored(page)).assessments[0];
+  expect(first.score).toBe(100);
+  await nav(page, "Bug-report’lar");
+  await page
+    .getByLabel(`${target.title}: holati`, { exact: true })
+    .selectOption("Closed");
+  await nav(page, "Natija va retest");
+  await expect(panel(page).getByRole("status")).toContainText(
+    "Bu bahodan keyin",
+  );
+  await submit(page);
+  const afterClosing = active(await stored(page));
+  expect(afterClosing.assessments[0]).toEqual(first);
+  const closedAttempt = afterClosing.assessments.at(-1);
+  expect(closedAttempt.score).toBeLessThan(100);
+  expect(
+    closedAttempt.reports.find((report) => report.id === target.id).verdict,
+  ).toBe("closed");
+  expect(closedAttempt.missedCheckIds).toContain(target.checkId);
+  await nav(page, "Bug-report’lar");
+  await page
+    .getByLabel(`${target.title}: holati`, { exact: true })
+    .selectOption("Reopened");
+  await nav(page, "Natija va retest");
+  await submit(page);
+  const final = active(await stored(page));
+  expect(final.assessments).toHaveLength(3);
+  expect(final.assessments[0]).toEqual(first);
+  expect(final.assessments[1]).toEqual(closedAttempt);
+  expect(final.assessments[2].score).toBe(100);
+  expect(
+    final.assessments[2].reports.find((report) => report.id === target.id)
+      .verdict,
+  ).toBe("matched");
+});
+
+test("partial repairs grade only their changed criteria and active report lifecycle", async ({
+  page,
+}) => {
+  await openExercise(page);
+  const fixture = completedFixture(
+    active(await stored(page)),
+    "Qisman tuzatilgan mashq",
+  );
+  fixture.fixedBugIds = fixture.scenario.bugs.slice(0, 2).map((bug) => bug.id);
+  fixture.reviewUnlocked = true;
+  const fixedCheckIds = fixture.fixedBugIds.map((id) =>
+    id.replace("BUG-", "AT-"),
+  );
+  const fixedReports = fixture.reports.filter((report) =>
+    fixedCheckIds.includes(report.checkId),
+  );
+  const fixedChecks = fixture.checklist.filter((check) =>
+    fixedCheckIds.includes(check.checkId),
+  );
+  expect(fixedReports).toHaveLength(2);
+  await importBackup(
+    page,
+    { version: 1, activeId: fixture.id, sessions: [fixture] },
+    fixture.name,
+  );
+  await nav(page, "Natija va retest");
+  await submit(page);
+  const first = active(await stored(page)).assessments[0];
+  expect(first.build.fixedBugIds).toEqual(fixture.fixedBugIds);
+  expect(first.summary.wrong).toBe(2);
+  expect(first.summary.totalFindings).toBe(fixture.scenario.bugs.length - 2);
+  for (const report of fixedReports)
+    expect(first.reports.find((row) => row.id === report.id).verdict).toBe(
+      "not-failing",
+    );
+  await nav(page, "Checklist");
+  for (const check of fixedChecks)
+    await page
+      .getByLabel(`${check.title}: holati`, { exact: true })
+      .selectOption("Passed");
+  await nav(page, "Bug-report’lar");
+  for (const report of fixedReports)
+    await page
+      .getByLabel(`${report.title}: holati`, { exact: true })
+      .selectOption("Closed");
+  await nav(page, "Natija va retest");
+  await submit(page);
+  const second = active(await stored(page)).assessments.at(-1);
+  expect(second.score).toBe(100);
+  expect(second.summary.wrong).toBe(0);
+  expect(second.summary.matchedFindings).toBe(fixture.scenario.bugs.length - 2);
+  await nav(page, "Bug-report’lar");
+  await page
+    .getByLabel(`${fixedReports[0].title}: holati`, { exact: true })
+    .selectOption("Reopened");
+  await nav(page, "Natija va retest");
+  await submit(page);
+  const final = active(await stored(page));
+  expect(final.assessments[0]).toEqual(first);
+  expect(final.assessments[1]).toEqual(second);
+  const reopened = final.assessments.at(-1);
+  expect(reopened.score).toBeLessThan(100);
+  expect(
+    reopened.reports.find((row) => row.id === fixedReports[0].id).verdict,
+  ).toBe("not-failing");
+  expect(final.fixedBugIds).toEqual(fixture.fixedBugIds);
 });
